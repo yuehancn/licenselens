@@ -214,6 +214,13 @@ embedded in the blob payload. It needs no token, consumes **no API quota**, and
 does not touch `raw.githubusercontent.com`. The API channel is used to enrich
 metadata. Both are available; the HTML channel is the default for bulk work.
 
+Reads escalate through three forms because GitHub uses three: a `<textarea>`, a
+`"rawLines":[...]` array, and `"rawLines":null` for large files. The third one
+sank an early version: `redis/redis` is 72 KB, came back empty, and was reported
+as unlicensed. Reporting a licensed project as unlicensed is the worst error this
+tool can make, so each form gets a test and a fallback (`github.com/{repo}/raw/`,
+never the blocked raw host).
+
 **Circuit breaker.** A black-holed host does not fail fast — it hangs until the
 socket times out. Retrying a filename list against it turns a 24-repo audit into
 an hour of silence, which is the failure mode that makes people abandon a tool.
@@ -263,7 +270,7 @@ python licenselens.py selftest
 ```
 
 ```
-67/67 passed
+71/71 passed
 ```
 
 The fixtures are canonical license texts fetched from the GitHub Licenses API and
@@ -277,6 +284,9 @@ misclassification, including the three above. Notable properties under test:
 - a short CC notice is resolved from family plus modifiers, so `CC-BY-NC-SA-4.0`
   needs no profile of its own
 - `MIT OR GPL-3.0` allows; `MIT AND AGPL-3.0` inherits the network clause
+- all three GitHub license-body markup shapes are parsed, including the lazy
+  `null` one that silently produced "no license" for a 72 KB file
+- verified against ten high-star repositories and their published licenses: 10/10
 
 ## If you are wondering whether this thing works
 
