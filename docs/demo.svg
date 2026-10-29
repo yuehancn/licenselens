@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 312" width="880" height="312" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<style>
+ .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px}
+ .hdr{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:10.5px;letter-spacing:.09em;fill:#59636e}
+ .cmd{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;fill:#1f2328;font-weight:600}
+</style>
+<rect width="880" height="312" rx="10" fill="#ffffff" stroke="#d1d9e0"/>
+<circle cx="26" cy="26" r="6" fill="#cf222e"/>
+<circle cx="48" cy="26" r="6" fill="#bf8700"/>
+<circle cx="70" cy="26" r="6" fill="#1a7f37"/>
+<text x="24" y="64" class="cmd">$ licenselens audit --file repos.txt</text>
+<line x1="24" y1="76" x2="856" y2="76" stroke="#d1d9e0"/>
+<text x="24" y="96" class="hdr">STATUS</text>
+<text x="92" y="96" class="hdr">REPOSITORY</text>
+<text x="356" y="96" class="hdr">LICENSE</text>
+<text x="660" y="96" class="hdr">DECISION</text>
+<text x="852" y="96" class="hdr" text-anchor="end">STARS</text>
+<line x1="24" y1="106" x2="856" y2="106" stroke="#d1d9e0"/>
+<text x="24" y="132" class="mono" fill="#1a7f37" font-weight="700">PASS</text><text x="92" y="132" class="mono" fill="#1f2328">pallets/flask</text><text x="356" y="132" class="mono" fill="#1a7f37">BSD-3-Clause</text><text x="660" y="132" class="mono" fill="#1a7f37" font-weight="600">allow</text><text x="852" y="132" class="mono" fill="#59636e" text-anchor="end">74934</text><text x="24" y="159" class="mono" fill="#cf222e" font-weight="700">FAIL</text><text x="92" y="159" class="mono" fill="#1f2328">immich-app/immich</text><text x="356" y="159" class="mono" fill="#cf222e">AGPL-3.0</text><text x="660" y="159" class="mono" fill="#cf222e" font-weight="600">block</text><text x="852" y="159" class="mono" fill="#59636e" text-anchor="end">117582</text><text x="24" y="186" class="mono" fill="#cf222e" font-weight="700">FAIL</text><text x="92" y="186" class="mono" fill="#1f2328">n8n-io/n8n</text><text x="356" y="186" class="mono" fill="#cf222e">Sustainable-Use-1.0</text><text x="660" y="186" class="mono" fill="#cf222e" font-weight="600">block</text><text x="852" y="186" class="mono" fill="#59636e" text-anchor="end">208992</text><text x="24" y="213" class="mono" fill="#cf222e" font-weight="700">FAIL</text><text x="92" y="213" class="mono" fill="#1f2328">anthropics/skills</text><text x="356" y="213" class="mono" fill="#cf222e">NONE</text><text x="660" y="213" class="mono" fill="#cf222e" font-weight="600">block</text><text x="852" y="213" class="mono" fill="#59636e" text-anchor="end">184680</text><text x="24" y="240" class="mono" fill="#cf222e" font-weight="700">FAIL</text><text x="92" y="240" class="mono" fill="#1f2328">comfyanonymous/ComfyUI</text><text x="356" y="240" class="mono" fill="#cf222e">GPL-3.0</text><text x="660" y="240" class="mono" fill="#cf222e" font-weight="600">block</text><text x="852" y="240" class="mono" fill="#59636e" text-anchor="end">143931</text>
+<line x1="24" y1="256" x2="856" y2="256" stroke="#d1d9e0"/>
+<text x="24" y="282" class="mono" fill="#59636e">5 repos: 1 allow, 0 review, 4 block</text>
+<text x="24" y="304" class="mono" fill="#59636e">GitHub API quota consumed: 0 requests</text>
+</svg>

@@ -1,0 +1,13 @@
+{
+  "name": "demo-app",
+  "version": "1.0.0",
+  "license": "MIT",
+  "dependencies": {
+    "react": "^18.2.0",
+    "express": "^4.18.2",
+    "some-nc-dataset": "1.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

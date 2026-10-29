@@ -1,0 +1,6 @@
+[project]
+name = "demo-service"
+version = "0.1.0"
+license = { text = "AGPL-3.0" }
+dependencies = ["httpx>=0.25"]
+classifiers = ["License :: OSI Approved :: MIT License"]

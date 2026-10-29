@@ -1,0 +1,55 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    name: selftest (python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.9", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # No dependency install step on purpose. If this ever needs one, the
+      # "runs on a locked-down CI runner" promise is broken and the test job
+      # should fail to remind us.
+      - name: Run the suite
+        run: python licenselens.py selftest
+
+  dogfood:
+    name: audit this repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Judge our own license
+        run: python licenselens.py judge LICENSE --fail-on never
+
+      - name: Scan our own manifests
+        run: python licenselens.py scan . --fail-on never
+
+      - name: Emit SARIF
+        run: |
+          printf 'pallets/flask\nn8n-io/n8n\n' > repos.txt
+          python licenselens.py audit --file repos.txt --format sarif -o licenses.sarif --quiet
+        continue-on-error: true
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: licenses.sarif
+        continue-on-error: true
