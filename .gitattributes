@@ -1,0 +1,9 @@
+# Normalise line endings so the license fixtures stay byte-identical across
+# platforms. The judge is content-based and the tests compare against canonical
+# texts fetched verbatim, so a CRLF conversion on checkout would quietly alter
+# the input the suite is asserting on.
+* text=auto eol=lf
+*.txt text eol=lf
+LICENSE text eol=lf
+*.png binary
+*.svg text eol=lf
