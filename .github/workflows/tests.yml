@@ -87,3 +87,33 @@ jobs:
       - name: Check SARIF is valid JSON
         run: python -c "import json;json.load(open('licenses.sarif'));print('sarif ok')"
         continue-on-error: true
+
+      # The policy loader now rejects typos and unsupported YAML, and that
+      # rejection is the point of it. This step proves the shipped example still
+      # loads - a broken example is the first thing a new user copies.
+      - name: Validate the example policy file
+        run: python licenselens.py policy examples/policy/acme.policy.yml
+
+      # A misspelled key must fail, and must fail with exit 2 (bad input) rather
+      # than 1 (a dependency is blocked). If this step ever passes, the typo
+      # guard has regressed and every downstream report is suspect.
+      #
+      # The file is written from a heredoc rather than a one-liner: MSYS-style
+      # shells rewrite the characters in `python -c "...\n..."`, and a mangled
+      # fixture would make this step pass or fail for the wrong reason.
+      - name: A typo in a policy file must exit 2
+        run: |
+          python <<'PY'
+          open("broken.yml", "w", newline="").write(
+              "extends: commercial\nsettings:\n  allow_strong_copyeft: true\n"
+          )
+          PY
+          set +e
+          python licenselens.py policy broken.yml
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "expected exit 2 for a misspelled key, got $status"
+            exit 1
+          fi
+          echo "typo guard ok (exit 2)"

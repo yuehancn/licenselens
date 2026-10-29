@@ -270,6 +270,45 @@ def _base(name: str) -> Policy:
     raise AssertionError(name)
 
 
+def _require_mapping(data: dict, key: str, parcel: "_Parsed", path: str,
+                     what: str) -> dict:
+    """Get a nested block, or explain the two ways it is usually written wrong.
+
+    A scalar here is almost always one of two things: flow style
+    (``accept: {MIT: allow}``) or a value typed on the same line as the key
+    followed by indented lines that then belong to nothing. Both produce a
+    string where a mapping was expected, and until this helper existed the
+    message was "must be a mapping, not a single value" - true, but it did not
+    tell the author which of the two they had done.
+    """
+    value = data.get(key)
+    if value is None or value == {}:
+        return {}
+    if isinstance(value, dict):
+        return value
+    text = str(value).strip()
+    if text.startswith(("{", "[")):
+        raise PolicyError(
+            f"{key}: {what} must be a nested block, not flow style. Write one "
+            f"'id: value' line per entry, indented under '{key}:'.",
+            parcel.lines.get(key),
+            path,
+        )
+    if text:
+        raise PolicyError(
+            f"{key}: {what} must be a nested block, but this line has a value "
+            f"({text!r}) on the key itself. Leave the line as '{key}:' with "
+            "nothing after the colon, then indent the entries below it.",
+            parcel.lines.get(key),
+            path,
+        )
+    raise PolicyError(
+        f"{key}: {what} must be a nested block.",
+        parcel.lines.get(key),
+        path,
+    )
+
+
 def _check_unknown(keys: set[str], allowed: set[str], where: str, parcel: _Parsed) -> None:
     """Reject unknown keys, suggesting the closest known one.
 
@@ -355,19 +394,10 @@ def load_policy_file(path: str | Path) -> Policy:
     policy = _base(base_name)
 
     # -- accept: explicit per-license decisions ------------------------------
-    accept = data.get("accept", {})
-    if accept and not isinstance(accept, dict):
-        # The value came back as a scalar because the line was flow style
-        # (``accept: {A: b}``) or a single word. Both are rejected for the same
-        # reason: this loader does not implement flow collections, and silently
-        # treating the text as one license id would invent an exception.
-        raise PolicyError(
-            "accept: must be a nested mapping of license id to decision. "
-            "Write one 'id: decision' line per license, indented under 'accept:'. "
-            "Flow style ({...}) is not supported.",
-            parcel.lines.get("accept"),
-            str(path),
-        )
+    accept = _require_mapping(
+        data, "accept", parcel, str(path),
+        "a mapping of license id to decision",
+    )
     known = _known_license_ids()
     overrides: dict[str, Decision] = {}
     for license_id, value in (accept or {}).items():
@@ -390,13 +420,9 @@ def load_policy_file(path: str | Path) -> Policy:
         )
 
     # -- settings ------------------------------------------------------------
-    settings = data.get("settings", {})
-    if settings and not isinstance(settings, dict):
-        raise PolicyError(
-            "settings: must be a nested mapping, not a single value",
-            parcel.lines.get("settings"),
-            str(path),
-        )
+    settings = _require_mapping(
+        data, "settings", parcel, str(path), "a mapping of settings",
+    )
     _check_unknown(set(settings or {}), _SETTINGS, "settings", parcel)
 
     updates: dict[str, Any] = {}
