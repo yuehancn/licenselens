@@ -1,0 +1,24 @@
+licenselens
+Copyright (C) 2026 yuehancn
+
+This product is licensed under the GNU Affero General Public License, version 3
+(AGPL-3.0). The full license text is in the LICENSE file.
+
+It is also available under a commercial license, which is required only for
+closed-source distribution and hosted services. See COMMERCIAL.md for the exact
+boundary. Running this tool inside your own company or in CI needs no purchase.
+
+The AGPL-3.0 text in LICENSE is unmodified. This notice records the copyright
+holder and explains the dual-licensing arrangement; it does not alter the
+license terms.
+
+Why the license file contains the license text and nothing else: automated
+license detectors (including the one in this repository) identify a project's
+license by matching the file against canonical texts. Prepending a copyright
+header to a license body causes GitHub to report "Other" instead of
+"AGPL-3.0", which makes the project's licensing look unclear to exactly the
+audience that cares about it. The notice therefore lives here.
+
+Third-party license texts in tests/fixtures/ are reproduced verbatim from the
+GitHub Licenses API and the SPDX License List so that the test suite asserts
+against the real documents. They remain under their own licenses.
