@@ -81,11 +81,14 @@ python licenselens.py judge LICENSE
 Or install it:
 
 ```bash
-pip install licenselens
+pip install licenselens-cli
 licenselens --version
 ```
 
-Python 3.9+. Zero dependencies.
+The distribution is named `licenselens-cli` because `licenselens` on PyPI belongs
+to an unrelated project. The command you run is still `licenselens`.
+
+Python 3.10+. Zero dependencies.
 
 ## Use
 
@@ -187,16 +190,16 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
-      - run: pip install licenselens
+      - run: pip install licenselens-cli
       - name: Audit dependencies
         run: licenselens scan . --resolve --fail-on block
       - name: Audit repository (SARIF to the Security tab)
         run: licenselens audit --file repos.txt --format sarif -o licenses.sarif
         continue-on-error: true
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@v4
         with: { sarif_file: licenses.sarif }
 ```
 

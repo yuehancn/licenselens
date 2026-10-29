@@ -21,15 +21,25 @@ jobs:
         # sits for 15+ minutes and then gets cancelled before a single step
         # runs, which turns the badge red for an infrastructure reason rather
         # than a code one. A cancelled job with steps:[] is not a test failure.
+        #
+        # 3.10 is the floor because it is the oldest interpreter we still claim
+        # to support, and it is the one that exercises the no-tomllib fallback
+        # in manifest.py for real instead of through a monkeypatch. 3.14 is the
+        # newest, so a future stdlib removal shows up here and not in a user's
+        # bug report. Windows stays on 3.13: the prebuilt 3.10 manifest has no
+        # win32 build, and this job exists to cover Windows, not 3.10.
         include:
           - os: ubuntu-latest
-            python: "3.9"
+            python: "3.10"
             required: true
           - os: ubuntu-latest
             python: "3.12"
             required: true
           - os: ubuntu-latest
             python: "3.13"
+            required: true
+          - os: ubuntu-latest
+            python: "3.14"
             required: true
           - os: windows-latest
             python: "3.13"
@@ -39,8 +49,8 @@ jobs:
             required: false
     continue-on-error: ${{ !matrix.required }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
 
@@ -54,10 +64,10 @@ jobs:
     name: audit this repository
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Judge our own license
         run: python licenselens.py judge LICENSE --fail-on never

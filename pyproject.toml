@@ -3,11 +3,16 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "licenselens"
-version = "0.1.0"
+# The distribution name is deliberately NOT "licenselens": that name on PyPI
+# belongs to an unrelated project (a Microsoft security-configuration scanner,
+# v0.4.0), so `pip install licenselens` installs somebody else's package. The
+# import name and the console script stay `licenselens`; only the thing you type
+# after `pip install` changes.
+name = "licenselens-cli"
+version = "0.1.1"
 description = "Find the licenses that will stop you shipping. Offline-correct license detection and commercial-risk decisions for dependency trees."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "AGPL-3.0-or-later" }
 authors = [{ name = "yuehancn" }]
 keywords = [
@@ -24,6 +29,12 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Legal Industry",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Security",
 ]

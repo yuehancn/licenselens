@@ -24,7 +24,7 @@ from .policy import Decision, Finding, Policy, evaluate
 
 try:  # Python 3.11+
     import tomllib as _toml
-except ModuleNotFoundError:  # pragma: no cover - 3.9/3.10 fallback
+except ModuleNotFoundError:  # pragma: no cover - 3.10 fallback
     _toml = None
 
 

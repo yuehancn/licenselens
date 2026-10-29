@@ -513,8 +513,10 @@ def test_pyproject_parsed_without_tomllib() -> None:
     """Python < 3.11 has no tomllib, and CI caught the fallback dropping entries.
 
     The old fallback extracted only ``name``, so every dependency and the
-    project's own license vanished on 3.9 - the scan still "worked", it just
-    reported nothing, which is the silent failure this whole project is about.
+    project's own license vanished on interpreters without tomllib - the scan
+    still "worked", it just reported nothing, which is the silent failure this
+    whole project is about. The fallback still matters: 3.10 is supported and
+    has no tomllib, so this branch runs for real on the oldest CI job.
     """
     import sys as _sys
 
@@ -614,6 +616,101 @@ def test_raw_channel_url_uses_github_host_not_blocked_raw_host() -> None:
     assert any("/raw/" in url for url in seen), f"no /raw/ channel attempted: {seen}"
     hosts = {urllib.parse.urlsplit(url).netloc for url in seen}
     assert "raw.githubusercontent.com" not in hosts, hosts
+
+
+@case
+def test_packaging_names_stay_split() -> None:
+    """The PyPI distribution is ``licenselens-cli``; the command is ``licenselens``.
+
+    ``licenselens`` on PyPI is an unrelated project (a Microsoft security
+    configuration scanner). If the README ever tells a reader to run
+    ``pip install licenselens``, that reader installs the wrong tool and then
+    reports that ours does not work - a support problem no amount of code
+    quality fixes. The import name and console script must NOT be renamed to
+    match the distribution, because that would break every existing
+    ``import licenselens`` and every CI config already calling the command.
+
+    Parsed as text rather than with tomllib so this runs on 3.10 too.
+    """
+    import re
+
+    root = HERE.parent
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+
+    dist_name = re.search(r'^name\s*=\s*"([^"]+)"', pyproject, re.M)
+    assert dist_name, "pyproject has no [project] name"
+    assert dist_name.group(1) == "licenselens-cli", dist_name.group(1)
+
+    # The console script is the contract users put in CI. Renaming it silently
+    # breaks them, so pin it.
+    assert re.search(r"^licenselens\s*=\s*\"licenselens\.cli:main\"", pyproject, re.M), (
+        "the console script must stay named `licenselens`"
+    )
+
+    # A bare `pip install licenselens` anywhere in the docs is the bug itself.
+    bare = re.findall(r"pip install licenselens(?![\w-])", readme)
+    assert not bare, f"README tells users to install the occupied name: {bare}"
+    assert "pip install licenselens-cli" in readme, "README lost the real install line"
+
+
+@case
+def test_supported_python_floor_is_consistent_across_files() -> None:
+    """The advertised floor must equal the CI floor, and neither may be EOL.
+
+    Three places state the supported interpreter: ``requires-python`` in
+    pyproject, the README install section, and the lowest entry in the CI
+    matrix. They drifted before (3.9 stayed advertised a year after it went EOL
+    on 2025-10-31), and a floor nobody tests is a floor that is already broken.
+    """
+    import re
+
+    root = HERE.parent
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    workflow = (root / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
+
+    requires = re.search(r'requires-python\s*=\s*">=\s*(3\.\d+)"', pyproject)
+    assert requires, "requires-python missing or not in >=X.Y form"
+    floor = requires.group(1)
+
+    # README states it as "Python 3.10+."
+    readme_floor = re.search(r"Python\s+(3\.\d+)\+", readme)
+    assert readme_floor, "README no longer states a Python floor"
+    assert readme_floor.group(1) == floor, (
+        f"README says {readme_floor.group(1)}+ but pyproject says {floor}+"
+    )
+
+    # CI must actually test the floor; otherwise it is an untested claim.
+    matrix = re.findall(r'python:\s*"(3\.\d+)"', workflow)
+    assert matrix, "no python versions found in the CI matrix"
+    assert floor in matrix, f"CI never runs on the advertised floor {floor}: {sorted(set(matrix))}"
+
+
+@case
+def test_workflow_actions_are_not_on_retired_majors() -> None:
+    """Deprecated Action majors must not creep back in via copy-paste.
+
+    ``checkout@v4``/``setup-python@v5``/``codeql-action@v3`` still run today,
+    but v4 checkout predates the fork-PR checkout hardening and the newer
+    majors move to the Node 24 runtime that GitHub is retiring the old one for.
+    Copy-pasting an old workflow is how a green repo silently rots, so the
+    floors are asserted here instead of remembered.
+    """
+    import re
+
+    workflow = (HERE.parent / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+    floors = {"actions/checkout": 7, "actions/setup-python": 7}
+
+    found = re.findall(r"uses:\s*(actions/[\w-]+)@v(\d+)", workflow)
+    assert found, "workflow uses no actions at all"
+    for repo, major in found:
+        if repo in floors:
+            assert int(major) >= floors[repo], (
+                f"{repo}@v{major} is below the v{floors[repo]} floor"
+            )
 
 
 if __name__ == "__main__":

@@ -60,9 +60,16 @@ No `pip install` is required for development or testing. That is intentional:
 the suite has to run on the machines where this tool is most needed, which are
 frequently the ones where installing packages is not allowed.
 
+If you do publish, note the naming split: the PyPI distribution is
+`licenselens-cli`, the import package and console script are `licenselens`.
+`licenselens` on PyPI is an unrelated project — publishing under that name is
+impossible, and telling users to `pip install licenselens` installs the wrong
+tool. Never "fix" this by renaming the import package; that would break every
+existing `import licenselens` and the console script name in people's CI configs.
+
 ## Code style
 
-- Python 3.9+. No third-party runtime dependencies, ever. The tool must run on a
+- Python 3.10+. No third-party runtime dependencies, ever. The tool must run on a
   locked-down CI runner with nothing but CPython.
 - Type annotations on public functions.
 - Comments explain *why*, especially where a line looks odd because it works
