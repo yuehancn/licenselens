@@ -54,7 +54,8 @@ LICENSE_FILENAMES: tuple[str, ...] = (
 
 #: Filenames we must NOT treat as the project's own license. A vendored copy
 #: under ``vendor/`` says nothing about the parent repository.
-NOT_A_PROJECT_LICENSE = (
+#: Applied when a caller supplies full paths rather than root-relative names.
+NOT_A_PROJECT_LICENSE: tuple[str, ...] = (
     "node_modules/",
     "vendor/",
     "third_party/",
@@ -62,6 +63,17 @@ NOT_A_PROJECT_LICENSE = (
     "deps/",
     "external/",
 )
+
+
+def is_project_license_path(path: str) -> bool:
+    """True when a license-looking path belongs to the project itself.
+
+    A ``vendor/foo/LICENSE`` is the *vendored dependency's* license, not the
+    project's. Treating it as the project license would attribute a third
+    party's terms to the wrong party.
+    """
+    normalised = path.replace("\\", "/").lstrip("./").lower()
+    return not any(marker in normalised for marker in NOT_A_PROJECT_LICENSE)
 
 
 class SourceUnavailable(RuntimeError):

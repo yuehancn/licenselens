@@ -152,6 +152,50 @@ def _parse_requirements(path: Path) -> list[ManifestEntry]:
 _CLASSIFIER_LICENSE = re.compile(r"License\s*::\s*(.+)$", re.I)
 
 
+def _parse_pyproject_minimal(text: str) -> dict:
+    """Extract ``[project]`` fields from a pyproject.toml without tomllib.
+
+    Scope is deliberately narrow: name, version, license (string or table), and
+    the ``dependencies`` / ``classifiers`` arrays. That is everything the scanner
+    needs. A partial reader that returns *something* is better here than a
+    dependency, but it must not silently pretend an unparsed license is absent -
+    if a ``license`` key exists in any recognised form, it is returned.
+    """
+    project: dict = {}
+    # Restrict to the [project] table so tool-specific keys do not leak in.
+    match = re.search(r"^\[project\]\s*$(.*?)(?=^\[|\Z)", text, re.M | re.S)
+    body = match.group(1) if match else text
+
+    for key in ("name", "version", "requires-python"):
+        found = re.search(rf'^\s*{re.escape(key)}\s*=\s*["\']([^"\']*)["\']', body, re.M)
+        if found:
+            project[key] = found.group(1)
+
+    # license = "MIT"  |  license = { text = "MIT" }  |  license = { file = "LICENSE" }
+    found = re.search(r'^\s*license\s*=\s*(.+)$', body, re.M)
+    if found:
+        raw = found.group(1).strip()
+        if raw.startswith("{"):
+            inline = {}
+            for key in ("text", "file"):
+                sub = re.search(rf'{key}\s*=\s*["\']([^"\']*)["\']', raw)
+                if sub:
+                    inline[key] = sub.group(1)
+            if inline:
+                project["license"] = inline
+        else:
+            literal = re.match(r'^["\'](.*)["\']', raw)
+            if literal:
+                project["license"] = literal.group(1)
+
+    for key in ("dependencies", "classifiers"):
+        found = re.search(rf'^\s*{key}\s*=\s*\[(.*?)\]', body, re.M | re.S)
+        if found:
+            project[key] = re.findall(r'["\']([^"\']+)["\']', found.group(1))
+
+    return {"project": project} if project else {}
+
+
 def _parse_pyproject(path: Path) -> list[ManifestEntry]:
     text = path.read_text(encoding="utf-8", errors="replace")
     entries: list[ManifestEntry] = []
@@ -163,10 +207,12 @@ def _parse_pyproject(path: Path) -> list[ManifestEntry]:
         except Exception:  # noqa: BLE001 - a malformed manifest must not abort a scan
             data = {}
     else:
-        # Minimal fallback: pull the project name and license line by regex.
-        match = re.search(r'^\s*name\s*=\s*"([^"]+)"', text, re.M)
-        if match:
-            data = {"project": {"name": match.group(1)}}
+        # Python < 3.11 has no tomllib and this tool refuses to depend on a
+        # third-party TOML parser. Fall back to pulling the handful of fields
+        # that matter out of the [project] table. Not a general TOML parser:
+        # it handles the flat key/value and single-line-array forms that real
+        # pyproject files use for name, version, license and dependencies.
+        data = _parse_pyproject_minimal(text)
 
     project = data.get("project") or {}
     license_value = project.get("license")

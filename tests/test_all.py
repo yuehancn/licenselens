@@ -508,5 +508,51 @@ def test_registry_version_ranges_are_concretised() -> None:
     assert clean_version("*") == ""
 
 
+@case
+def test_pyproject_parsed_without_tomllib() -> None:
+    """Python < 3.11 has no tomllib, and CI caught the fallback dropping entries.
+
+    The old fallback extracted only ``name``, so every dependency and the
+    project's own license vanished on 3.9 - the scan still "worked", it just
+    reported nothing, which is the silent failure this whole project is about.
+    """
+    import sys as _sys
+
+    import licenselens.manifest as manifest
+
+    original = manifest._toml
+    try:
+        manifest._toml = None
+        entries = manifest.scan_manifests(HERE.parent / "examples" / "demo", Policy())
+    finally:
+        manifest._toml = original
+
+    by_name = {e.name: e for e in entries}
+    assert "demo-service" in by_name, "project table was dropped without tomllib"
+    assert by_name["demo-service"].license_declared == "AGPL-3.0"
+    assert by_name["demo-service"].decision == Decision.BLOCK
+    # Dependencies must survive too, not just the project block.
+    assert "httpx" in by_name
+
+
+@case
+def test_pyproject_minimal_parser_handles_license_forms() -> None:
+    """All three license spellings in the wild must parse."""
+    from licenselens.manifest import _parse_pyproject_minimal
+
+    inline_text = _parse_pyproject_minimal(
+        '[project]\nname = "x"\nlicense = { text = "Apache-2.0" }\n'
+    )
+    assert inline_text["project"]["license"] == {"text": "Apache-2.0"}
+
+    inline_file = _parse_pyproject_minimal(
+        '[project]\nname = "x"\nlicense = { file = "LICENSE" }\n'
+    )
+    assert inline_file["project"]["license"] == {"file": "LICENSE"}
+
+    bare = _parse_pyproject_minimal('[project]\nname = "x"\nlicense = "MIT"\n')
+    assert bare["project"]["license"] == "MIT"
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
