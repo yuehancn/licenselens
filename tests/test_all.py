@@ -902,5 +902,52 @@ def test_policy_file_quoted_hash_is_not_a_comment() -> None:
     assert parsed.data["name"] == "team", parsed.data
 
 
+@case
+def test_version_is_identical_in_pyproject_and_package() -> None:
+    """Two version strings must not drift apart.
+
+    ``pyproject.toml`` is what PyPI publishes; ``__version__`` is what
+    ``licenselens --version`` and every ``--json`` report prints. When they
+    disagree, the artefact on PyPI claims one number and the tool inside it
+    reports another, and a bug report becomes unanswerable: you cannot tell
+    which build the reporter actually ran.
+    """
+    import re
+
+    root = HERE.parent
+    pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
+    init = (root / "src" / "licenselens" / "__init__.py").read_text(encoding="utf-8")
+
+    declared = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.M)
+    assert declared, "pyproject has no version"
+    runtime = re.search(r'__version__\s*=\s*"([^"]+)"', init)
+    assert runtime, "package has no __version__"
+    assert declared.group(1) == runtime.group(1), (
+        f"pyproject says {declared.group(1)}, package says {runtime.group(1)}"
+    )
+
+
+@case
+def test_pyproject_uses_the_pep639_license_form() -> None:
+    """``license = { text = ... }`` stops building in Feb 2027.
+
+    setuptools emits a deprecation warning for the table form and has dated its
+    removal. A distribution that cannot build is not a distribution, so this is
+    asserted rather than remembered - the warning is easy to scroll past in a
+    build log, which is exactly how it would survive until it broke.
+    """
+    import re
+
+    pyproject = (HERE.parent / "pyproject.toml").read_text(encoding="utf-8")
+    assert not re.search(r"^license\s*=\s*\{", pyproject, re.M), (
+        "license uses the deprecated TOML table form"
+    )
+    assert re.search(r'^license\s*=\s*"[^"]+"', pyproject, re.M), (
+        "license is not a bare SPDX expression"
+    )
+    # The licence files must still be declared, or the sdist ships without them.
+    assert "license-files" in pyproject, "license-files missing"
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=68"]
+# setuptools>=77 is required for the PEP 639 form of `license` used below. The
+# older table form (`license = { text = "..." }`) is deprecated and stops
+# building in Feb 2027, so this is not a cosmetic bump.
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,11 +12,14 @@ build-backend = "setuptools.build_meta"
 # import name and the console script stay `licenselens`; only the thing you type
 # after `pip install` changes.
 name = "licenselens-cli"
-version = "0.2.0"
+version = "0.2.1"
 description = "Find the licenses that will stop you shipping. Offline-correct license detection and commercial-risk decisions for dependency trees."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "AGPL-3.0-or-later" }
+# PEP 639: a bare SPDX expression, not a table. This also makes PyPI render the
+# license correctly instead of showing an opaque "Other".
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "yuehancn" }]
 keywords = [
     "license",

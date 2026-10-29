@@ -24,7 +24,7 @@ from .judge import (
 from .policy import Decision, Finding, Policy, RiskKind, evaluate
 from .probe import Prober, RepoRecord
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 __all__ = [
     "COMMERCIAL_CONDITIONAL",

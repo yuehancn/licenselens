@@ -2,6 +2,10 @@
 
 **Find the licenses that will stop you shipping.**
 
+[![PyPI](https://img.shields.io/pypi/v/licenselens-cli.svg)](https://pypi.org/project/licenselens-cli/)
+[![Python](https://img.shields.io/pypi/pyversions/licenselens-cli.svg)](https://pypi.org/project/licenselens-cli/)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+
 Most license scanners tell you the name of a license. `licenselens` tells you
 whether you can ship, and answers correctly on the cases where naive scanners are
 wrong: the copyleft license that *mentions* a harsher one, the permissive file
