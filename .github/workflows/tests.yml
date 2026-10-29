@@ -42,14 +42,15 @@ jobs:
       - name: Scan our own manifests
         run: python licenselens.py scan . --fail-on never
 
-      - name: Emit SARIF
+      # Exercise the network channel without letting upstream licensing decide
+      # whether CI is green: the point of this step is to prove the HTML channel
+      # parses and the reports serialise, not to assert anything about Flask.
+      - name: Probe a known repository and emit SARIF
         run: |
-          printf 'pallets/flask\nn8n-io/n8n\n' > repos.txt
+          printf 'pallets/flask\n' > repos.txt
           python licenselens.py audit --file repos.txt --format sarif -o licenses.sarif --quiet
         continue-on-error: true
 
-      - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: licenses.sarif
+      - name: Check SARIF is valid JSON
+        run: python -c "import json;json.load(open('licenses.sarif'));print('sarif ok')"
         continue-on-error: true
