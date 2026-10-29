@@ -8,25 +8,36 @@ on:
 
 jobs:
   selftest:
-    name: selftest (python ${{ matrix.python }})
+    name: selftest (${{ matrix.os }}, python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
+    # The suite takes under 10 seconds. Anything approaching this limit is a
+    # stuck runner, not a slow test, so fail fast instead of hanging the run.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        # Full OS coverage on the newest interpreter, and the oldest supported
-        # interpreter once. A full cross product is 9 jobs that queue for minutes
-        # on free runners without telling us anything the 5-job shape does not.
+        # Linux and Windows are the platforms that must be green. macOS is
+        # included but non-blocking: on free runners the macOS queue regularly
+        # sits for 15+ minutes and then gets cancelled before a single step
+        # runs, which turns the badge red for an infrastructure reason rather
+        # than a code one. A cancelled job with steps:[] is not a test failure.
         include:
           - os: ubuntu-latest
             python: "3.9"
+            required: true
           - os: ubuntu-latest
             python: "3.12"
+            required: true
           - os: ubuntu-latest
             python: "3.13"
+            required: true
           - os: windows-latest
             python: "3.13"
+            required: true
           - os: macos-latest
             python: "3.13"
+            required: false
+    continue-on-error: ${{ !matrix.required }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
