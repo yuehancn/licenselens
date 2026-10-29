@@ -278,6 +278,21 @@ misclassification, including the three above. Notable properties under test:
   needs no profile of its own
 - `MIT OR GPL-3.0` allows; `MIT AND AGPL-3.0` inherits the network clause
 
+## If you are wondering whether this thing works
+
+It runs on itself, and the answer is uncomfortable:
+
+```
+$ licenselens audit yuehancn/licenselens
+FAIL  yuehancn/licenselens    AGPL-3.0    block
+    [NETWORK-COPYLEFT] AGPL-style network clause: serving this to users over a
+    network obliges you to offer the complete corresponding source.
+```
+
+That is correct. This project is AGPL-3.0, so a closed-source product that hosts
+it would owe source — which is precisely why a commercial license exists. A tool
+that flatters its own author is not measuring anything.
+
 ## License
 
 Dual-licensed: **AGPL-3.0-or-later** for open use, or a **commercial license**
