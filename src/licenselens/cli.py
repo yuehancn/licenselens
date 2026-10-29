@@ -21,6 +21,12 @@ from pathlib import Path
 from . import __version__
 from .judge import COMMERCIAL_FORBIDDEN, explain, judge, judge_expression
 from .policy import Decision, Policy, evaluate, summarize
+from .policyfile import (
+    PolicyError,
+    describe as describe_policy,
+    dumps_policy,
+    load_policy_file,
+)
 from .probe import Prober
 from .report import _ICON, exit_code, render
 from .sources import Fetcher, resolve_token
@@ -32,6 +38,25 @@ _POLICIES = {
     "saas": Policy.saas,
     "copyleft": Policy.copyleft_ok,
 }
+
+
+def _add_policy_args(parser: argparse.ArgumentParser) -> None:
+    """Both ways to choose a policy, on every command that takes one.
+
+    ``--policy`` stays for the four built-in postures (short, no file to commit).
+    ``--policy-file`` is the M2 addition: the team's deviations live in the repo
+    and get code-reviewed like anything else. They are mutually exclusive
+    because accepting both invites "which one won?" in a support thread.
+    """
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--policy", choices=sorted(_POLICIES), default=None,
+        help="built-in commercial posture (default: commercial)",
+    )
+    group.add_argument(
+        "--policy-file", metavar="PATH",
+        help="YAML policy file describing what your organisation accepts",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -61,10 +86,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     judge_parser.add_argument("paths", nargs="+", help="license files to classify")
     judge_parser.add_argument("--json", action="store_true", help="machine-readable output")
-    judge_parser.add_argument(
-        "--policy", choices=sorted(_POLICIES), default="commercial",
-        help="commercial posture to evaluate against (default: commercial)",
-    )
+    _add_policy_args(judge_parser)
     judge_parser.add_argument(
         "--quiet", action="store_true", help="print only the SPDX id"
     )
@@ -87,10 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="output format (default: table)",
     )
     audit_parser.add_argument("-o", "--out", help="write to a file instead of stdout")
-    audit_parser.add_argument(
-        "--policy", choices=sorted(_POLICIES), default="commercial",
-        help="commercial posture to evaluate against (default: commercial)",
-    )
+    _add_policy_args(audit_parser)
     audit_parser.add_argument(
         "--channel", choices=["auto", "html", "api"], default="auto",
         help="html avoids GitHub API quota entirely (default: auto)",
@@ -120,10 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="output format (default: table)",
     )
     scan_parser.add_argument("-o", "--out", help="write to a file instead of stdout")
-    scan_parser.add_argument(
-        "--policy", choices=sorted(_POLICIES), default="commercial",
-        help="commercial posture to evaluate against (default: commercial)",
-    )
+    _add_policy_args(scan_parser)
     scan_parser.add_argument(
         "--fail-on", choices=["block", "review", "never"], default="block",
         help="exit non-zero at this severity (default: block)",
@@ -149,13 +165,41 @@ def build_parser() -> argparse.ArgumentParser:
         "facts", help="show the built-in license knowledge base"
     )
     facts_parser.add_argument("--json", action="store_true")
+
+    # -- policy ----------------------------------------------------------
+    policy_parser = sub.add_parser(
+        "policy",
+        help="check a policy file, or show what a built-in posture means",
+    )
+    policy_parser.add_argument("path", nargs="?", help="policy file to validate")
+    policy_parser.add_argument(
+        "--policy", choices=sorted(_POLICIES), default=None,
+        help="show a built-in posture instead of reading a file",
+    )
+    policy_parser.add_argument("--json", action="store_true")
     return parser
 
 
 # ---------------------------------------------------------------------------
 
 
-def _policy(name: str) -> Policy:
+def _policy(args: argparse.Namespace) -> Policy:
+    """Resolve --policy / --policy-file into one Policy, or exit 2 explaining why.
+
+    A broken policy file must stop the run. Continuing with the default posture
+    would be the worst outcome available: the team believes their exceptions are
+    in force, the tool quietly ignores them, and a dependency that was signed off
+    gets blocked (or a blocked one ships). Exit 2, not 1, so CI can tell "your
+    policy file is broken" apart from "a dependency is blocked".
+    """
+    path = getattr(args, "policy_file", None)
+    if path:
+        try:
+            return load_policy_file(path)
+        except PolicyError as exc:
+            print(f"policy error: {exc}", file=sys.stderr)
+            raise SystemExit(2) from exc
+    name = getattr(args, "policy", None) or "commercial"
     factory = _POLICIES.get(name, Policy)
     return factory()
 
@@ -169,7 +213,7 @@ def _should_fail(decision: Decision, fail_on: str) -> bool:
 
 
 def cmd_judge(args: argparse.Namespace) -> int:
-    policy = _policy(args.policy)
+    policy = _policy(args)
     exit_status = 0
     payload: list[dict] = []
 
@@ -191,6 +235,9 @@ def cmd_judge(args: argparse.Namespace) -> int:
                 "decision": decision.value,
                 "verdict": verdict.to_dict(),
                 "findings": [f.to_dict() for f in findings],
+                # Inlined so a stored report states the policy it was judged
+                # against. The file can change afterwards; the report cannot.
+                "policy": dumps_policy(policy),
             })
         else:
             print(f"== {path}")
@@ -246,7 +293,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
         print(f"no such path: {root}", file=sys.stderr)
         return 2
 
-    policy = _policy(args.policy)
+    policy = _policy(args)
 
     fetcher = None
     if args.resolve:
@@ -371,7 +418,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         print("nothing to audit: pass owner/repo arguments or --file", file=sys.stderr)
         return 2
 
-    policy = _policy(args.policy)
+    policy = _policy(args)
     prober = Prober(fetcher=fetcher, token=token, policy=policy, delay=args.delay)
 
     if not args.quiet:
@@ -468,6 +515,49 @@ def cmd_facts(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_policy(args: argparse.Namespace) -> int:
+    """Validate a policy file, or print what a posture implies.
+
+    Exists so the policy file can be checked on its own in CI, before any
+    dependency is scanned. A broken policy discovered halfway through a 400-package
+    audit wastes the audit; discovered in its own job, it is a one-line fix.
+    """
+    if args.path:
+        try:
+            policy = load_policy_file(args.path)
+        except PolicyError as exc:
+            print(f"policy error: {exc}", file=sys.stderr)
+            return 2
+        status = "ok"
+    elif args.policy:
+        policy = _policy(args)
+        status = "ok"
+    else:
+        print("give a policy file path, or --policy <name>", file=sys.stderr)
+        return 2
+
+    if args.json:
+        print(json.dumps(dumps_policy(policy), indent=2, ensure_ascii=False))
+        return 0
+
+    print(f"{status}: {describe_policy(policy)}")
+    print(f"  weak copyleft (MPL/LGPL)    "
+          f"{'allow' if policy.allow_weak_copyleft else 'review'}")
+    print(f"  strong copyleft (GPL)       "
+          f"{'allow' if policy.allow_strong_copyleft else 'block'}")
+    print(f"  network copyleft (AGPL)     "
+          f"{'allow' if policy.allow_network_copyleft else 'block'}")
+    print(f"  distribution model          {policy.distribution_model}")
+    print(f"  max staleness               {policy.max_staleness_days} days")
+    print(f"  require patent grant        "
+          f"{'yes' if policy.require_patent_grant else 'no'}")
+    if policy.overrides:
+        print("  overrides")
+        for spdx_id, decision in sorted(policy.overrides.items()):
+            print(f"    {spdx_id:<24} {decision.value}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -478,6 +568,7 @@ def main(argv: list[str] | None = None) -> int:
         "scan": cmd_scan,
         "expr": cmd_expr,
         "facts": cmd_facts,
+        "policy": cmd_policy,
     }
     handler = handlers.get(args.command)
     if handler is None:

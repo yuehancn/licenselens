@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 # import name and the console script stay `licenselens`; only the thing you type
 # after `pip install` changes.
 name = "licenselens-cli"
-version = "0.1.1"
+version = "0.2.0"
 description = "Find the licenses that will stop you shipping. Offline-correct license detection and commercial-risk decisions for dependency trees."
 readme = "README.md"
 requires-python = ">=3.10"

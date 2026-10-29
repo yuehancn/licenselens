@@ -1,0 +1,58 @@
+# A worked example of a policy file.
+#
+# Copy this next to your project as `licenselens.policy.yml`, commit it, and let
+# it be reviewed like any other config. Run it with:
+#
+#     licenselens scan . --policy-file licenselens.policy.yml
+#     licenselens policy licenselens.policy.yml      # validate only
+#
+# Everything here is optional. A file with nothing but `extends: commercial`
+# is valid and means exactly what the built-in default means.
+
+# Start from a built-in posture, then record your deviations.
+# One of: commercial, permissive, saas, copyleft
+extends: commercial
+
+# Appears in reports. Defaults to the filename.
+name: acme-saas-with-signed-off-exceptions
+
+# ---------------------------------------------------------------------------
+# accept: per-license decisions, signed off by a human
+# ---------------------------------------------------------------------------
+# These replace the computed decision outright. They are the reason this file
+# exists: a legal team approved *these* components, and re-deriving the answer
+# would discard their approval.
+#
+# Licenses: allow / review / block. An unknown license id is rejected rather
+# than ignored - a misspelled id would never match, so the exception you think
+# you made would silently not exist.
+accept:
+  # We ship this behind a documented process boundary and have the sign-off.
+  AGPL-3.0: review
+  # Hardware product: static linking was cleared in writing.
+  LGPL-3.0: allow
+  # This one is genuinely fine for us; do not ask again.
+  MPL-2.0: allow
+
+# ---------------------------------------------------------------------------
+# settings: tweak the built-in thresholds
+# ---------------------------------------------------------------------------
+settings:
+  # Our compliance window is tighter than the default 730 days.
+  max_staleness_days: 365
+  # We are a SaaS product, so GPL is not a distribution problem for us.
+  distribution_model: saas
+  allow_strong_copyleft: true
+  # AGPL stays blocked at the posture level; the one exception is in `accept`.
+  allow_network_copyleft: false
+  # Medical-adjacent code: patent grants matter.
+  require_patent_grant: true
+
+# ---------------------------------------------------------------------------
+# Notes on what this file deliberately does NOT support
+# ---------------------------------------------------------------------------
+# * No per-package overrides. Policy is about license terms, not about "this one
+#   library is special" - that belongs in the sign-off document so it is
+#   reviewable, not hidden in a scanner config.
+# * No YAML anchors, flow collections, or multi-document files. The loader is a
+#   strict subset and says so rather than guessing. See policyfile.py.

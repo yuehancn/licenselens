@@ -734,5 +734,173 @@ def test_runner_refuses_to_report_success_with_zero_cases() -> None:
         _runner._REGISTRY[:] = original
 
 
+@case
+def test_policy_file_override_changes_the_decision() -> None:
+    """A signed-off override must actually replace the computed decision.
+
+    The whole reason a policy file exists is that a human approved a specific
+    license. If the override were merely recorded and the computed findings
+    still applied, the file would change nothing while looking like it did -
+    the exact silent no-op this project is built to catch.
+    """
+    from licenselens.judge import judge
+    from licenselens.policyfile import load_policy_file
+
+    agpl = (FIXTURES / "agpl-3.0.txt").read_text(encoding="utf-8")
+    verdict = judge(agpl)
+    assert verdict.spdx_id == "AGPL-3.0"
+
+    plain = Policy()
+    decision_plain, _ = evaluate(verdict, plain)
+    assert decision_plain == Decision.BLOCK
+
+    policy = load_policy_file(HERE.parent / "examples" / "policy" / "acme.policy.yml")
+    decision, findings = evaluate(verdict, policy)
+    assert decision == Decision.REVIEW, decision
+    codes = [f.code for f in findings]
+    assert "POLICY-OVERRIDE" in codes, codes
+    # The computed network-copyleft finding must NOT also be present, or the
+    # result would contain a block alongside the override and depend on ordering.
+    assert "NETWORK-COPYLEFT" not in codes, codes
+
+
+@case
+def test_policy_override_does_not_swallow_maintenance_findings() -> None:
+    """Accepting a license says nothing about accepting an abandoned dependency.
+
+    Written because the first version of this feature returned early on an
+    override and skipped the staleness and archived checks entirely. "We accept
+    AGPL" and "we accept a repo nobody has touched in three years" are separate
+    decisions with separate remedies; collapsing them loses real signal.
+    """
+    from licenselens.judge import judge
+    from licenselens.policyfile import load_policy_file
+
+    policy = load_policy_file(HERE.parent / "examples" / "policy" / "acme.policy.yml")
+    verdict = judge((FIXTURES / "agpl-3.0.txt").read_text(encoding="utf-8"))
+    decision, findings = evaluate(verdict, policy, staleness_days=9999, archived=True)
+    codes = [f.code for f in findings]
+    assert "POLICY-OVERRIDE" in codes, codes
+    assert "STALE" in codes, codes
+    assert "ARCHIVED" in codes, codes
+    # A stale-but-accepted dependency still needs a human, even though the
+    # license itself was signed off.
+    assert decision == Decision.REVIEW, decision
+
+
+@case
+def test_policy_file_rejects_unknown_settings_key() -> None:
+    """A misspelled key must abort, not parse cleanly and do nothing.
+
+    ``allow_strong_copyeft`` would, under a lenient loader, leave the team
+    believing they had relaxed a rule they had not. That is worse than a crash,
+    because nobody goes looking for a rule that appears to be working.
+    """
+    from licenselens.policyfile import PolicyError, parse_yaml_subset
+
+    text = "extends: commercial\nsettings:\n  allow_strong_copyeft: true\n"
+    data = parse_yaml_subset(text, "t.yml")
+    # The parser is generic; the schema check is what must reject it.
+    from licenselens.policyfile import _check_unknown, _SETTINGS
+
+    try:
+        _check_unknown(set(data.data["settings"]), _SETTINGS, "settings", data)
+    except PolicyError as exc:
+        assert "allow_strong_copyeft" in str(exc)
+        assert "allow_strong_copyleft" in str(exc), "no usable suggestion given"
+    else:
+        raise AssertionError("an unknown settings key was accepted")
+
+
+@case
+def test_policy_file_rejects_unknown_license_id() -> None:
+    """A misspelled SPDX id can never match, so it must be refused.
+
+    Silently keeping it would produce a policy that looks like it grants an
+    exception and grants nothing.
+
+    The suggestion has to be the *right* license. ``GPL-2.0-only`` must suggest
+    ``GPL-2.0``; a character-set-overlap heuristic suggested ``LGPL-3.0`` here,
+    which is the opposite problem (weak vs strong copyleft) and would send
+    someone to the wrong obligation. A wrong suggestion in an error message is
+    worse than no suggestion.
+    """
+    import tempfile
+
+    from licenselens.policyfile import PolicyError, load_policy_file
+
+    text = "extends: commercial\naccept:\n  GPL-2.0-only: block\n"
+    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False,
+                                     encoding="utf-8") as handle:
+        handle.write(text)
+        path = handle.name
+    try:
+        load_policy_file(path)
+    except PolicyError as exc:
+        message = str(exc)
+        assert "GPL-2.0-only" in message
+        assert "did you mean 'GPL-2.0'" in message, message
+        assert "LGPL" not in message, message
+    else:
+        raise AssertionError("an unknown license id was accepted")
+
+
+@case
+def test_policy_file_rejects_unsupported_yaml_constructs() -> None:
+    """Unsupported YAML must be named, not silently misread.
+
+    This loader implements a subset on purpose (no dependencies). The risk is a
+    document it *half* understands: flow style would parse as one opaque scalar
+    and become an exception nobody wrote. Refusing is recoverable.
+    """
+    from licenselens.policyfile import PolicyError, parse_yaml_subset
+
+    cases = {
+        "multi-document": "---\nextends: commercial\n---\nextends: saas\n",
+        "flow mapping": "extends: commercial\naccept: {MIT: allow}\n",
+        "block scalar": "name: |\n  two lines\n",
+        "anchor": "extends: &base commercial\n",
+    }
+    for label, text in cases.items():
+        try:
+            parse_yaml_subset(text, "t.yml")
+        except PolicyError:
+            continue
+        raise AssertionError(f"{label} was accepted instead of rejected")
+
+
+@case
+def test_policy_file_boolean_is_not_a_decision() -> None:
+    """``MIT: yes`` parses as a boolean; guessing the intent would invent policy."""
+    import tempfile
+
+    from licenselens.policyfile import PolicyError, load_policy_file
+
+    text = "extends: commercial\naccept:\n  MIT: yes\n"
+    with tempfile.NamedTemporaryFile("w", suffix=".yml", delete=False,
+                                     encoding="utf-8") as handle:
+        handle.write(text)
+        path = handle.name
+    try:
+        load_policy_file(path)
+    except PolicyError as exc:
+        assert "boolean" in str(exc), exc
+    else:
+        raise AssertionError("a boolean was accepted as a decision")
+
+
+@case
+def test_policy_file_quoted_hash_is_not_a_comment() -> None:
+    """``#`` inside a quoted scalar is data. Truncating it would corrupt a name."""
+    from licenselens.policyfile import parse_yaml_subset
+
+    parsed = parse_yaml_subset('name: "team #2 policy"\n', "t.yml")
+    assert parsed.data["name"] == "team #2 policy", parsed.data
+
+    # Unquoted, the same hash does start a comment.
+    parsed = parse_yaml_subset("name: team  # comment\n", "t.yml")
+    assert parsed.data["name"] == "team", parsed.data
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

@@ -253,6 +253,42 @@ A license name is not a decision. `--policy` selects the commercial posture:
 binary, but AGPL closes exactly that loophole. That distinction decides whether a
 dependency is a legal problem or not.
 
+### Your own policy, in the repo
+
+Four postures cannot cover every organisation. Somebody always has one signed-off
+exception, and the usual outcome is that the gate gets ignored. `--policy-file`
+moves that decision into a reviewed file:
+
+```yaml
+# licenselens.policy.yml
+extends: commercial
+accept:
+  AGPL-3.0: review      # signed off, behind a documented process boundary
+  LGPL-3.0: allow       # static linking cleared in writing
+settings:
+  max_staleness_days: 365
+  require_patent_grant: true
+```
+
+```bash
+licenselens policy licenselens.policy.yml       # validate, no scan needed
+licenselens scan . --policy-file licenselens.policy.yml
+```
+
+Two behaviours are deliberate:
+
+- **A typo fails the run** (exit 2, with the line number). A misspelled key or
+  license id would otherwise parse, change nothing, and leave you certain you had
+  relaxed a rule you had not.
+- **An override replaces the licence judgement, not the maintenance one.**
+  "We accept AGPL" says nothing about "we accept an unmaintained dependency", so
+  `STALE` and `ARCHIVED` findings still apply.
+
+The loader implements a strict YAML subset — no anchors, flow collections or
+multi-document files. Unsupported constructs are reported by name rather than
+half-parsed. A full worked example is in
+[`examples/policy/acme.policy.yml`](examples/policy/acme.policy.yml).
+
 ## What it does not do
 
 - **It is not legal advice.** It is a well-tested reading of license text. Have a
@@ -273,7 +309,7 @@ python licenselens.py selftest
 ```
 
 ```
-71/71 passed
+82/82 passed
 ```
 
 The fixtures are canonical license texts fetched from the GitHub Licenses API and

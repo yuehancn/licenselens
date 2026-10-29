@@ -56,11 +56,22 @@ other licenses, it does not license them to you.
 ## What is open source and what is not
 
 Everything in this repository is AGPL-3.0-or-later. That is the whole tool:
-judge, probe, policy, report, CLI, registry resolver.
+judge, probe, policy, report, CLI, registry resolver — **including
+`--policy-file`, the ability to write your own acceptance rules in YAML.**
+
+That last point is worth stating plainly, because it looks like something we
+should be charging for and deliberately is not: an acceptance rule only means
+something if you can read the logic that applies it. Hiding the policy engine
+behind a licence would make every decision it produces unauditable, and an
+unauditable compliance gate is worse than none. Write your own policy file; it is
+free and it is the intended way to use the tool.
 
 Commercial-only work, developed separately and **not** in this repository:
 
-- organisation-wide policy packs and approval workflows
+- **maintained policy packs** — the rules themselves, not the ability to write
+  them: sector templates (finance, healthcare, public sector) kept current as
+  upstream licences change, with the reasoning behind each threshold
+- organisation-wide approval workflows (who signed off on which exception, when)
 - continuous monitoring with change alerts when an upstream license shifts
 - SBOM ingestion and policy gates for CycloneDX / SPDX documents
 - signed audit reports for procurement and due-diligence review
@@ -81,7 +92,7 @@ named users who run the tool or read its reports.
 | Closed-source distribution | yes | yes | yes |
 | SaaS / hosted use | yes | yes | yes |
 | Rebranding | no | yes | yes |
-| Policy packs | 1 | 5 | unlimited |
+| Maintained policy packs | 1 | 5 | unlimited |
 | CI integration support | email | email + call | dedicated |
 | Signed audit reports | no | 4 / year | unlimited |
 | Response commitment | best effort | 3 business days | 1 business day |

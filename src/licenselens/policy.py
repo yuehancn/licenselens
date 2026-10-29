@@ -87,6 +87,17 @@ class Policy:
     require_patent_grant: bool = False
     #: Distributing a binary counts more than using a service internally.
     distribution_model: str = "distributed"  # or "saas" or "internal"
+    #: Explicit per-license decisions from a policy file, keyed by SPDX id.
+    #: An override replaces the computed decision for that license outright -
+    #: that is the point: a human signed off on this specific component, and
+    #: re-deriving the answer would ignore their signature.
+    overrides: dict[str, "Decision"] = field(default_factory=dict)
+    #: Where the policy came from, for reports. Empty for built-in postures.
+    source: str = ""
+
+    def override_for(self, spdx_id: str) -> "Decision | None":
+        """The signed-off decision for this license, if the policy names one."""
+        return self.overrides.get(spdx_id)
 
     @classmethod
     def permissive_only(cls) -> "Policy":
@@ -123,158 +134,190 @@ def evaluate(
     """Combine license terms, hygiene and maintenance into one decision."""
     findings: list[Finding] = []
 
-    # -- hygiene first: an unknown license is worse than a known-bad one ------
-    if verdict.spdx_id == "NONE":
-        findings.append(
-            Finding(
-                kind=RiskKind.HYGIENE,
-                severity=Decision.BLOCK,
-                code="NO-LICENSE",
-                message=(
-                    "No license file: default copyright applies, so all rights are "
-                    "reserved and commercial use is not permitted."
-                ),
-                remedy=(
-                    "Get written permission from the author, or replace the dependency. "
-                    "Do not treat a public repository as free to use."
-                ),
-            )
-        )
-    elif verdict.spdx_id in ("UNRECOGNIZED", "CUSTOM"):
-        findings.append(
-            Finding(
-                kind=RiskKind.HYGIENE,
-                severity=Decision.BLOCK,
-                code="UNKNOWN-LICENSE",
-                message=f"License could not be resolved automatically ({verdict.name}).",
-                remedy="Read the license text manually before shipping.",
-            )
-        )
-    elif not verdict.decisive:
-        findings.append(
-            Finding(
-                kind=RiskKind.HYGIENE,
-                severity=Decision.REVIEW,
-                code="AMBIGUOUS-LICENSE",
-                message=(
-                    "Automatic match was ambiguous; the runner-up is close enough that "
-                    "the answer may be wrong."
-                ),
-                remedy="Confirm by reading the license text, then pin the result.",
-            )
-        )
-
-    # -- commercial terms ----------------------------------------------------
-    if verdict.commercial == COMMERCIAL_FORBIDDEN:
+    # -- an explicit, signed-off override replaces the license judgement -----
+    # Checked before the terms, because the override *is* the decision: a human
+    # accepted this specific license. If the computed findings were also added
+    # the result would contradict itself and the exit code would depend on which
+    # finding happened to rank highest.
+    #
+    # Maintenance findings are deliberately NOT skipped. "We accept AGPL" says
+    # nothing about "we accept a dependency nobody has touched in three years",
+    # and those produce different remedies.
+    override = policy.override_for(verdict.spdx_id)
+    if override is not None:
         findings.append(
             Finding(
                 kind=RiskKind.LICENSE,
-                severity=Decision.BLOCK,
-                code="NONCOMMERCIAL",
+                severity=override,
+                code="POLICY-OVERRIDE",
                 message=(
-                    "NonCommercial terms: commercial use requires a separate license "
-                    "from the rights holder."
+                    f"{verdict.spdx_id} is set to {override.value} by the policy file "
+                    f"({policy.source or policy.name})."
                 ),
                 remedy=(
-                    "Buy a commercial license, replace the dependency, or get written "
-                    "permission. Do not ship it in a paid product."
-                ),
+                    "This is a recorded decision, not a computed one. Keep the "
+                    "sign-off on file; re-review it when the license or its use changes."
+                )
+                if override != Decision.ALLOW
+                else "Recorded as accepted. No action needed.",
             )
         )
 
-    if verdict.copyleft == COPYLEFT_NETWORK and not policy.allow_network_copyleft:
-        findings.append(
-            Finding(
-                kind=RiskKind.LICENSE,
-                severity=Decision.BLOCK,
-                code="NETWORK-COPYLEFT",
-                message=(
-                    "AGPL-style network clause: serving this to users over a network "
-                    "obliges you to offer the complete corresponding source."
-                ),
-                remedy=(
-                    "Buy the vendor's commercial license (this is the standard dual-license "
-                    "escape hatch), or isolate the component behind a process boundary and "
-                    "get legal sign-off first."
-                ),
-            )
-        )
-    elif verdict.copyleft == COPYLEFT_PROJECT:
-        if policy.distribution_model == "saas" and policy.allow_strong_copyleft:
+    skip_terms = override is not None
+
+    if not skip_terms:
+        # -- hygiene first: an unknown license is worse than a known-bad one ------
+        if verdict.spdx_id == "NONE":
             findings.append(
                 Finding(
-                    kind=RiskKind.LICENSE,
-                    severity=Decision.ALLOW,
-                    code="GPL-NO-DISTRIBUTION",
+                    kind=RiskKind.HYGIENE,
+                    severity=Decision.BLOCK,
+                    code="NO-LICENSE",
                     message=(
-                        "GPL applies, but a SaaS deployment is not distribution, so the "
-                        "source obligation is not triggered."
+                        "No license file: default copyright applies, so all rights are "
+                        "reserved and commercial use is not permitted."
                     ),
-                    remedy="Keep it server-side; do not ship the binary to customers.",
+                    remedy=(
+                        "Get written permission from the author, or replace the dependency. "
+                        "Do not treat a public repository as free to use."
+                    ),
                 )
             )
-        elif not policy.allow_strong_copyleft:
+        elif verdict.spdx_id in ("UNRECOGNIZED", "CUSTOM"):
+            findings.append(
+                Finding(
+                    kind=RiskKind.HYGIENE,
+                    severity=Decision.BLOCK,
+                    code="UNKNOWN-LICENSE",
+                    message=f"License could not be resolved automatically ({verdict.name}).",
+                    remedy="Read the license text manually before shipping.",
+                )
+            )
+        elif not verdict.decisive:
+            findings.append(
+                Finding(
+                    kind=RiskKind.HYGIENE,
+                    severity=Decision.REVIEW,
+                    code="AMBIGUOUS-LICENSE",
+                    message=(
+                        "Automatic match was ambiguous; the runner-up is close enough that "
+                        "the answer may be wrong."
+                    ),
+                    remedy="Confirm by reading the license text, then pin the result.",
+                )
+            )
+
+        # -- commercial terms ----------------------------------------------------
+        if verdict.commercial == COMMERCIAL_FORBIDDEN:
             findings.append(
                 Finding(
                     kind=RiskKind.LICENSE,
                     severity=Decision.BLOCK,
-                    code="STRONG-COPYLEFT",
+                    code="NONCOMMERCIAL",
                     message=(
-                        "Strong copyleft: distributing a derivative work obliges you to "
-                        "release it under the same license."
+                        "NonCommercial terms: commercial use requires a separate license "
+                        "from the rights holder."
                     ),
                     remedy=(
-                        "Buy a commercial license, replace it, or move it behind a "
-                        "network boundary (which then makes the AGPL question relevant)."
+                        "Buy a commercial license, replace the dependency, or get written "
+                        "permission. Do not ship it in a paid product."
                     ),
                 )
             )
-    elif verdict.copyleft == COPYLEFT_FILE:
-        if not policy.allow_weak_copyleft:
+
+        if verdict.copyleft == COPYLEFT_NETWORK and not policy.allow_network_copyleft:
+            findings.append(
+                Finding(
+                    kind=RiskKind.LICENSE,
+                    severity=Decision.BLOCK,
+                    code="NETWORK-COPYLEFT",
+                    message=(
+                        "AGPL-style network clause: serving this to users over a network "
+                        "obliges you to offer the complete corresponding source."
+                    ),
+                    remedy=(
+                        "Buy the vendor's commercial license (this is the standard dual-license "
+                        "escape hatch), or isolate the component behind a process boundary and "
+                        "get legal sign-off first."
+                    ),
+                )
+            )
+        elif verdict.copyleft == COPYLEFT_PROJECT:
+            if policy.distribution_model == "saas" and policy.allow_strong_copyleft:
+                findings.append(
+                    Finding(
+                        kind=RiskKind.LICENSE,
+                        severity=Decision.ALLOW,
+                        code="GPL-NO-DISTRIBUTION",
+                        message=(
+                            "GPL applies, but a SaaS deployment is not distribution, so the "
+                            "source obligation is not triggered."
+                        ),
+                        remedy="Keep it server-side; do not ship the binary to customers.",
+                    )
+                )
+            elif not policy.allow_strong_copyleft:
+                findings.append(
+                    Finding(
+                        kind=RiskKind.LICENSE,
+                        severity=Decision.BLOCK,
+                        code="STRONG-COPYLEFT",
+                        message=(
+                            "Strong copyleft: distributing a derivative work obliges you to "
+                            "release it under the same license."
+                        ),
+                        remedy=(
+                            "Buy a commercial license, replace it, or move it behind a "
+                            "network boundary (which then makes the AGPL question relevant)."
+                        ),
+                    )
+                )
+        elif verdict.copyleft == COPYLEFT_FILE:
+            if not policy.allow_weak_copyleft:
+                findings.append(
+                    Finding(
+                        kind=RiskKind.LICENSE,
+                        severity=Decision.REVIEW,
+                        code="WEAK-COPYLEFT",
+                        message=(
+                            "Weak copyleft: modified files must be published, though your "
+                            "larger work can stay proprietary."
+                        ),
+                        remedy="Do not modify the covered files, or publish those modifications.",
+                    )
+                )
+            else:
+                findings.append(
+                    Finding(
+                        kind=RiskKind.LICENSE,
+                        severity=Decision.ALLOW,
+                        code="WEAK-COPYLEFT-DYNAMIC",
+                        message="Weak copyleft is acceptable under the current policy.",
+                        remedy="Link dynamically and do not modify the covered files.",
+                    )
+                )
+
+        if verdict.commercial == COMMERCIAL_CONDITIONAL and not findings:
             findings.append(
                 Finding(
                     kind=RiskKind.LICENSE,
                     severity=Decision.REVIEW,
-                    code="WEAK-COPYLEFT",
-                    message=(
-                        "Weak copyleft: modified files must be published, though your "
-                        "larger work can stay proprietary."
-                    ),
-                    remedy="Do not modify the covered files, or publish those modifications.",
+                    code="CONDITIONAL",
+                    message="Commercial use is possible but carries conditions.",
+                    remedy="Confirm the obligations in the report are met.",
                 )
             )
-        else:
+
+        if policy.require_patent_grant and not verdict.patent_grant:
             findings.append(
                 Finding(
                     kind=RiskKind.LICENSE,
-                    severity=Decision.ALLOW,
-                    code="WEAK-COPYLEFT-DYNAMIC",
-                    message="Weak copyleft is acceptable under the current policy.",
-                    remedy="Link dynamically and do not modify the covered files.",
+                    severity=Decision.REVIEW,
+                    code="NO-PATENT-GRANT",
+                    message="This license grants no patent rights.",
+                    remedy="Get an indemnity or a patent review for patent-heavy domains.",
                 )
             )
-
-    if verdict.commercial == COMMERCIAL_CONDITIONAL and not findings:
-        findings.append(
-            Finding(
-                kind=RiskKind.LICENSE,
-                severity=Decision.REVIEW,
-                code="CONDITIONAL",
-                message="Commercial use is possible but carries conditions.",
-                remedy="Confirm the obligations in the report are met.",
-            )
-        )
-
-    if policy.require_patent_grant and not verdict.patent_grant:
-        findings.append(
-            Finding(
-                kind=RiskKind.LICENSE,
-                severity=Decision.REVIEW,
-                code="NO-PATENT-GRANT",
-                message="This license grants no patent rights.",
-                remedy="Get an indemnity or a patent review for patent-heavy domains.",
-            )
-        )
 
     # -- maintenance ---------------------------------------------------------
     if archived:
