@@ -93,6 +93,37 @@ def _decode_json_string_literal(raw: str) -> str:
     return text
 
 
+def _looks_like_html(text: str) -> bool:
+    head = text[:400].lower()
+    return "<!doctype html" in head or "<html" in head
+
+
+def _extract_raw_lines(html: str) -> str:
+    """Recover a license body from a GitHub blob page, across markup eras.
+
+    Three shapes exist in the wild, and all three are live today depending on
+    file size and which A/B bucket the request lands in:
+
+    1. ``<textarea>`` (the old editor embedding)
+    2. ``"rawLines":["..."]`` (the React payload, small and medium files)
+    3. ``"rawLines":null`` (large files, content fetched lazily)
+
+    Case 3 is why a fallback chain is mandatory: Redis's LICENSE.txt is 72 KB
+    and hits it. A parser that only handles case 2 reports no license for a
+    correctly licensed project, which then blocks it for no reason.
+    """
+    match = RE_TEXTAREA.search(html)
+    if match:
+        text = unescape_markup(match.group(1)).strip()
+        if len(text) > 30:
+            return text
+
+    text = _extract_raw_lines(html)
+    if len(text) > 30:
+        return text
+    return ""
+
+
 def _extract_raw_lines(html: str) -> str:
     """Pull the file body out of GitHub's React payload."""
     match = RE_RAW_LINES.search(html)
@@ -118,6 +149,37 @@ _FILENAME_LABELS = {
     "copying.md", "unlicense", "notice", "license-code", "license-code.md",
     "license-apache", "license-mit", "license_ee.md",
 }
+
+
+def _looks_like_html(text: str) -> bool:
+    head = text[:400].lower()
+    return "<!doctype html" in head or "<html" in head
+
+
+def _extract_license_body(html: str) -> str:
+    """Recover a license body from a GitHub blob page, across markup eras.
+
+    Three shapes are live today, chosen by file size and A/B bucket:
+
+    1. ``<textarea>`` - the old editor embedding.
+    2. ``"rawLines":["..."]`` - the React payload for small and medium files.
+    3. ``"rawLines":null`` - large files, whose content is fetched lazily.
+
+    Case 3 is why a fallback chain is mandatory rather than nice to have:
+    ``redis/redis`` LICENSE.txt is 72 KB and hits exactly it. A parser that only
+    handles case 2 concludes "no license" for a correctly licensed project, and
+    then blocks it for no reason - the highest-cost failure this tool can have.
+    """
+    match = RE_TEXTAREA.search(html)
+    if match:
+        text = unescape_markup(match.group(1)).strip()
+        if len(text) > 30:
+            return text
+
+    text = _extract_raw_lines(html)
+    if len(text) > 30:
+        return text
+    return ""
 
 
 @dataclass
@@ -262,34 +324,72 @@ class Prober:
 
     def _license_text_from_blob(self, repo: str, branch: str,
                                 repo_html: str = "") -> tuple[str, str]:
-        """Read the license body from the blob page.
+        """Read the license body, in three escalating channels.
 
-        This is the reason the HTML channel survives a blocked
-        ``raw.githubusercontent.com``: the blob page comes from ``github.com``
-        and carries the full file body.
+        1. The blob page, parsed across all markup shapes.
+        2. ``github.com/{repo}/raw/{branch}/{file}`` - same host, so it survives
+           a blocked ``raw.githubusercontent.com``, and it always returns the
+           real file regardless of size.
+        3. The API contents endpoint (base64), when a token is available.
+
+        Each step exists because a real repository needed it.
         """
         tried: list[str] = []
         for filename in self._license_candidates(repo, repo_html)[:8]:
-            url = f"https://github.com/{repo}/blob/{branch}/{filename}"
-            try:
-                html = self.fetcher.get(url)
-            except SourceUnavailable:
-                continue
             tried.append(filename)
 
-            match = RE_TEXTAREA.search(html)
-            if match:
-                text = unescape_markup(match.group(1)).strip()
-                if len(text) > 30:
+            # Channel 1: the rendered blob page.
+            try:
+                html = self.fetcher.get(f"https://github.com/{repo}/blob/{branch}/{filename}")
+                text = _extract_license_body(html)
+                if text:
                     return filename, text
+            except SourceUnavailable:
+                pass
 
-            text = _extract_raw_lines(html)
-            if len(text) > 30:
+            # Channel 2: the /raw/ redirect on github.com. Unlike
+            # raw.githubusercontent.com this host is reachable on restricted
+            # networks, and it is not subject to lazy-loading.
+            try:
+                body = self.fetcher.get(
+                    f"https://github.com/{repo}/raw/{branch}/{filename}",
+                    headers={"Accept": "text/plain"},
+                )
+                if body and len(body) > 30 and not _looks_like_html(body):
+                    return filename, body
+            except SourceUnavailable:
+                pass
+
+        # Channel 3: API contents (base64). Only worth one request per repo, and
+        # only when the listing above found no usable file.
+        for filename in tried[:3]:
+            text = self._license_from_api(repo, branch, filename)
+            if text:
                 return filename, text
 
         if tried:
             raise SourceUnavailable(f"license file found but body unreadable: {tried[:3]}")
         raise SourceUnavailable("no license file at repo root")
+
+    def _license_from_api(self, repo: str, branch: str, filename: str) -> str:
+        """Fetch a file via the contents API and decode the base64 body."""
+        if not self.token:
+            return ""
+        import base64
+
+        url = f"https://api.github.com/repos/{repo}/contents/{filename}?ref={branch}"
+        try:
+            payload, _ = api_json(url, self.fetcher, self.token)
+        except (SourceUnavailable, ValueError):
+            return ""
+        content = payload.get("content") if isinstance(payload, dict) else None
+        if not content:
+            return ""
+        try:
+            decoded = base64.b64decode(content).decode("utf-8", "replace")
+        except (ValueError, TypeError):
+            return ""
+        return decoded if len(decoded) > 30 else ""
 
     def probe_html(self, repo: str) -> RepoRecord:
         record = RepoRecord(repo=repo, channel="html")

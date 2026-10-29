@@ -554,5 +554,67 @@ def test_pyproject_minimal_parser_handles_license_forms() -> None:
     assert bare["project"]["license"] == "MIT"
 
 
+@case
+def test_extract_license_body_handles_lazy_loaded_blob() -> None:
+    """Large files ship ``"rawLines":null`` - not an array, not a textarea.
+
+    redis/redis LICENSE.txt is 72 KB and hits this shape. A parser that only
+    understands the array form concludes "no license" and blocks a correctly
+    licensed project, which is the most expensive failure this tool can produce.
+    """
+    from licenselens.probe import _extract_license_body
+
+    lazy = '<script>{"payload":{"codeViewBlobLayoutRoute.StyledBlob":{"rawLines":null}}}</script>'
+    assert _extract_license_body(lazy) == ""
+
+    array_form = (
+        '<script>{"rawLines":["MIT License","","Permission is hereby granted, free of '
+        'charge, to any person obtaining a copy","of this software."]}</script>'
+    )
+    recovered = _extract_license_body(array_form)
+    assert "Permission is hereby granted" in recovered
+
+    textarea_form = (
+        "<textarea>MIT License\n\nPermission is hereby granted, free of charge, "
+        "to any person obtaining a copy of this software.</textarea>"
+    )
+    assert "Permission is hereby granted" in _extract_license_body(textarea_form)
+
+
+@case
+def test_raw_channel_url_uses_github_host_not_blocked_raw_host() -> None:
+    """The raw fallback must stay on github.com.
+
+    ``raw.githubusercontent.com`` is black-holed on restricted networks - the
+    whole reason the HTML channel exists. Asserting on the URL this code
+    *builds* is the honest check; grepping the source would trip over the
+    comment that explains the hazard.
+    """
+    import urllib.parse
+
+    from licenselens.probe import Prober
+    from licenselens.sources import Fetcher
+
+    seen: list[str] = []
+
+    class RecordingFetcher(Fetcher):
+        def get(self, url, headers=None):  # type: ignore[override]
+            seen.append(url)
+            from licenselens.sources import SourceUnavailable
+
+            raise SourceUnavailable("offline test")
+
+    prober = Prober(fetcher=RecordingFetcher(timeout=1))
+    repo_html = '<a href="/o/r/blob/main/LICENSE">LICENSE</a>'
+    try:
+        prober._license_text_from_blob("o/r", "main", repo_html)
+    except Exception:  # noqa: BLE001 - expected, nothing is reachable
+        pass
+
+    assert any("/raw/" in url for url in seen), f"no /raw/ channel attempted: {seen}"
+    hosts = {urllib.parse.urlsplit(url).netloc for url in seen}
+    assert "raw.githubusercontent.com" not in hosts, hosts
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
