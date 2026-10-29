@@ -90,6 +90,20 @@ def run(filter_text: str = "", verbose: bool = False) -> int:
         print(tb)
     total = passed + failed
     print(f"{passed}/{total} passed" + (f", {failed} failed" if failed else ""))
+
+    # Zero cases is a failure, not a pass. This has already happened once here:
+    # the registration import was skipped, the registry stayed empty, and
+    # ``selftest`` printed a convincing "0/0 passed" while exiting 0 - a green
+    # CI run that tested nothing. A suite that reports success without running a
+    # single assertion is worse than no suite, because it buys false confidence.
+    if total == 0:
+        print(
+            "ERROR: no test cases ran. The registry is empty, so this is a "
+            "harness bug, not a pass.",
+            file=sys.stderr,
+        )
+        return 3
+
     return 0 if failed == 0 else 1
 
 

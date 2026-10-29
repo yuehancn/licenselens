@@ -713,5 +713,26 @@ def test_workflow_actions_are_not_on_retired_majors() -> None:
             )
 
 
+@case
+def test_runner_refuses_to_report_success_with_zero_cases() -> None:
+    """An empty registry must exit non-zero.
+
+    This repository already shipped a "0/0 passed" green run once: the module
+    that registers the cases was not imported, so the runner looped over nothing
+    and returned 0. CI was green and had tested nothing. Asserting on the exit
+    code is the only honest check - the printed summary looked fine both ways.
+    """
+    import _runner
+
+    original = list(_runner._REGISTRY)
+    try:
+        _runner._REGISTRY.clear()
+        code = _runner.run()
+        assert code != 0, "an empty suite reported success"
+        assert code == 3, f"expected the documented 3, got {code}"
+    finally:
+        _runner._REGISTRY[:] = original
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
