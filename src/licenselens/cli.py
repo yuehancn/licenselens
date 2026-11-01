@@ -153,6 +153,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan_parser.add_argument("--quiet", action="store_true")
 
+    # -- sbom -------------------------------------------------------------
+    sbom_parser = sub.add_parser(
+        "sbom",
+        help="decide on a CycloneDX or SPDX document somebody else produced",
+    )
+    sbom_parser.add_argument("path", help="CycloneDX or SPDX JSON document")
+    sbom_parser.add_argument(
+        "-f", "--format", default="table",
+        choices=["table", "markdown", "md", "json"],
+        help="output format (default: table)",
+    )
+    sbom_parser.add_argument("-o", "--out", help="write to a file instead of stdout")
+    _add_policy_args(sbom_parser)
+    sbom_parser.add_argument(
+        "--fail-on", choices=["block", "review", "never"], default="block",
+        help="exit non-zero at this severity (default: block)",
+    )
+    sbom_parser.add_argument("--quiet", action="store_true")
+
     # -- expr -------------------------------------------------------------
     expr_parser = sub.add_parser(
         "expr", help="evaluate an SPDX expression such as 'MIT OR Apache-2.0'"
@@ -336,6 +355,144 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if args.fail_on == "review":
         return 1 if (counts[Decision.BLOCK] or counts[Decision.REVIEW]) else 0
     return 1 if counts[Decision.BLOCK] else 0
+
+
+def cmd_sbom(args: argparse.Namespace) -> int:
+    """Decide on an SBOM. Exit 2 means the document itself is unusable."""
+    from collections import Counter
+
+    from .sbom import SbomError, load_sbom
+
+    policy = _policy(args)
+    try:
+        doc = load_sbom(args.path, policy)
+    except SbomError as exc:
+        # A document we cannot read must not look like a clean result. Exit 2
+        # separates "your SBOM is broken" from "a dependency is blocked", so a
+        # CI job can tell the pipeline owner apart from the legal reviewer.
+        print(f"sbom error: {exc}", file=sys.stderr)
+        return 2
+
+    entries = doc.entries
+    if args.format == "json":
+        payload = {
+            "meta": {
+                "tool": f"licenselens {__version__}",
+                "policy": policy.name,
+                "source": args.path,
+            },
+            "document": doc.to_dict(),
+        }
+        output = json.dumps(payload, indent=2, ensure_ascii=False)
+    elif args.format in ("markdown", "md"):
+        output = _render_sbom_markdown(doc)
+    else:
+        output = _render_sbom_table(doc)
+
+    if args.out:
+        Path(args.out).write_text(output, encoding="utf-8")
+        if not args.quiet:
+            print(f"wrote {args.out}", file=sys.stderr)
+    else:
+        print(output)
+
+    counts = Counter(e.decision for e in entries)
+    if args.fail_on == "never":
+        return 0
+    if args.fail_on == "review":
+        return 1 if (counts[Decision.BLOCK] or counts[Decision.REVIEW]) else 0
+    return 1 if counts[Decision.BLOCK] else 0
+
+
+def _render_sbom_table(doc) -> str:
+    from collections import Counter
+
+    entries = doc.entries
+    lines = [
+        f"{doc.format} {doc.spec_version} · {doc.subject}",
+        "",
+        f"{'STATUS':<5} {'COMPONENT':<36} {'LICENSE':<30} DECISION",
+        "-" * 92,
+    ]
+    for entry in entries:
+        license_id = entry.license_declared or (
+            entry.verdict.spdx_id if entry.verdict else "-"
+        )
+        version = f"@{entry.version_spec}" if entry.version_spec else ""
+        label = f"{entry.name}{version}"
+        lines.append(
+            f"{_ICON[entry.decision]:<5} {label[:36]:<36} "
+            f"{license_id[:30]:<30} {entry.decision.value}"
+        )
+    counts = Counter(e.decision for e in entries)
+    lines.append("-" * 92)
+    lines.append(
+        f"{len(entries)} components: {counts[Decision.ALLOW]} allow, "
+        f"{counts[Decision.REVIEW]} review, {counts[Decision.BLOCK]} block"
+    )
+
+    for note in doc.notes:
+        lines.append(f"note: {note}")
+
+    blocking = [e for e in entries if e.decision == Decision.BLOCK]
+    if blocking:
+        lines.append("")
+        lines.append("Blocking")
+        for entry in blocking:
+            codes = ", ".join(
+                f.code for f in entry.findings if f.severity == Decision.BLOCK
+            )
+            lines.append(f"  {entry.name} ({entry.license_declared}) - {codes}")
+            for finding in entry.findings:
+                if finding.severity == Decision.BLOCK and finding.remedy:
+                    lines.append(f"    fix: {finding.remedy}")
+
+    review = [e for e in entries if e.decision == Decision.REVIEW]
+    if review:
+        # Grouped by finding code: a 400-component SBOM where 40 rows say the
+        # same thing is a report nobody finishes, and the count is the part
+        # that drives the decision.
+        reasons: dict[str, int] = {}
+        for entry in review:
+            code = entry.findings[0].code if entry.findings else "REVIEW"
+            reasons[code] = reasons.get(code, 0) + 1
+        lines.append("")
+        lines.append("Needs review, by reason")
+        for code, count in sorted(reasons.items(), key=lambda kv: -kv[1]):
+            lines.append(f"  {count:>4}  {code}")
+    return "\n".join(lines)
+
+
+def _render_sbom_markdown(doc) -> str:
+    from collections import Counter
+
+    entries = doc.entries
+    counts = Counter(e.decision for e in entries)
+    out = [
+        f"# SBOM license report: {doc.subject}",
+        "",
+        f"{doc.format} {doc.spec_version} · {len(entries)} components · "
+        f"**{counts[Decision.BLOCK]} blocked**, {counts[Decision.REVIEW]} review, "
+        f"{counts[Decision.ALLOW]} clear",
+        "",
+        "| Decision | Component | Declared | Why |",
+        "| --- | --- | --- | --- |",
+    ]
+    for entry in entries:
+        if entry.decision == Decision.ALLOW:
+            continue
+        reason = ""
+        severe = [f for f in entry.findings if f.severity == entry.decision]
+        if severe:
+            reason = severe[0].message.replace("|", "/")[:120]
+        out.append(
+            f"| {entry.decision.value} | `{entry.name}` | "
+            f"{entry.license_declared or '-'} | {reason} |"
+        )
+    if doc.notes:
+        out.extend(["", "## Notes on the document", ""])
+        out.extend(f"- {note}" for note in doc.notes)
+    return "\n".join(out)
 
 
 def _render_scan_table(entries) -> str:
@@ -566,6 +723,7 @@ def main(argv: list[str] | None = None) -> int:
         "judge": cmd_judge,
         "audit": cmd_audit,
         "scan": cmd_scan,
+        "sbom": cmd_sbom,
         "expr": cmd_expr,
         "facts": cmd_facts,
         "policy": cmd_policy,

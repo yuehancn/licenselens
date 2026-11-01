@@ -949,5 +949,467 @@ def test_pyproject_uses_the_pep639_license_form() -> None:
     assert "license-files" in pyproject, "license-files missing"
 
 
+@case
+def test_real_1x_copyleft_licenses_are_recognised() -> None:
+    """The 1.x generations of EPL/CDDL/MPL, straight from the SPDX list.
+
+    All of these ids appeared in the first two real SBOMs this tool was pointed
+    at, and none of them was in the knowledge base. An id the judge cannot name
+    becomes a block, so on a Java BOM - where EPL-1.0 and CDDL-1.1 are the norm
+    rather than the exception - the report was mostly false blocks. A report
+    that is mostly false blocks gets ignored, and then it protects nobody.
+
+    The interesting part is that each 1.x text is a near-verbatim superset of
+    its 2.x successor, so the only reliable discriminator is the version in the
+    title. That is why the assertion checks the runner-up score too: matching
+    the right id while scoring the wrong one nearly as high is a coin flip
+    waiting to land on the wrong side.
+    """
+    pairs = {
+        "epl-1.0.txt": "EPL-1.0",
+        "cddl-1.0.txt": "CDDL-1.0",
+        "cddl-1.1.txt": "CDDL-1.1",
+        "mpl-1.1.txt": "MPL-1.1",
+        "0bsd.txt": "0BSD",
+        "wtfpl.txt": "WTFPL",
+    }
+    for filename, expected in pairs.items():
+        verdict = judge(load(filename))
+        assert verdict.spdx_id == expected, (
+            f"{filename} -> {verdict.spdx_id}, expected {expected}; "
+            f"candidates={[(c.spdx_id, c.score) for c in verdict.candidates[:3]]}"
+        )
+        assert verdict.decisive, f"{filename} produced a non-decisive verdict"
+
+    # 1.0 and 1.1 differ by one character in the title line only. If the pair
+    # ever collapses, every CDDL component lands on whichever profile sorts
+    # first - and CDDL-1.0 lacks the GPL secondary-license compatibility that
+    # 1.1 added, so the two are not interchangeable in a compliance review.
+    cddl_10 = judge(load("cddl-1.0.txt"))
+    runner_up = cddl_10.candidates[1]
+    assert runner_up.spdx_id == "CDDL-1.1", runner_up.spdx_id
+    assert cddl_10.candidates[0].score - runner_up.score >= 100, (
+        "CDDL-1.0 and 1.1 are too close to call: "
+        f"{cddl_10.candidates[0].score} vs {runner_up.score}"
+    )
+
+
+@case
+def test_zero_bsd_is_not_isc_despite_shared_word_for_word_grant() -> None:
+    """0BSD and ISC differ by a proviso, and that proviso is the whole point.
+
+    ISC says "permission ... is hereby granted, *provided that* the above
+    copyright notice ... appear in all copies". 0BSD ends the same sentence at
+    "granted." and deletes the requirement entirely.
+
+    Before this was separated, the 0BSD text resolved to ISC with confidence
+    0.65 - a decisive, wrong, *stricter* answer. Wrong in the strict direction
+    looks harmless until someone budgets engineering time to satisfy an
+    obligation that does not exist, or refuses a dependency they were free to
+    use. Both texts are the canonical SPDX ones.
+    """
+    zero = judge(load("0bsd.txt"))
+    isc = judge(load("isc.txt"))
+    assert zero.spdx_id == "0BSD", zero.spdx_id
+    assert isc.spdx_id == "ISC", isc.spdx_id
+    # The distinction must be visible in the obligations, not just the label:
+    # they are what a reader acts on.
+    assert any("attribution" in o.lower() for o in zero.obligations), zero.obligations
+    assert any("notice" in o.lower() for o in isc.obligations), isc.obligations
+
+
+@case
+def test_spdx_sentinels_are_not_reported_as_unrecognised() -> None:
+    """NONE and NOASSERTION are defined tokens, and they mean different things.
+
+    An SBOM that says NONE states the package has no license. One that says
+    NOASSERTION states nobody looked. Collapsing both into "Unrecognized
+    expression" - which is what a bare id lookup does - tells the reader to go
+    find a typo in a file they did not write, and hides the actual finding.
+    """
+    none_verdict = judge_expression("NONE")
+    assert none_verdict.spdx_id == "NONE"
+    # NONE is a legal finding: all rights reserved. It must block.
+    none_decision, none_findings = evaluate(none_verdict, Policy())
+    assert none_decision == Decision.BLOCK, none_decision
+    assert [f.code for f in none_findings] == ["NO-LICENSE"]
+
+    unasserted = judge_expression("NOASSERTION")
+    assert unasserted.spdx_id == "NOASSERTION"
+    # NOASSERTION is a gap in the data. Blocking asserts something about the
+    # package that the document does not say, so it reviews instead.
+    decision, findings = evaluate(unasserted, Policy())
+    assert decision == Decision.REVIEW, decision
+    assert [f.code for f in findings] == ["LICENSE-NOT-ASSERTED"]
+    # Lower case must behave identically: SBOM generators are inconsistent.
+    assert judge_expression("none").spdx_id == "NONE"
+
+
+@case
+def test_unknown_branch_makes_an_expression_undecidable() -> None:
+    """A dropped unknown term turns "somebody must read this" into "clear".
+
+    ``MIT AND SomeUnknownLicense`` used to evaluate to *allow*: the unknown
+    token was appended to a warnings list nobody reads and then discarded, so
+    only the MIT term reached the arithmetic. Under AND every term applies, so
+    the unassessed one is an unassessed obligation - the exact shape of a bug
+    that ships a licence violation with a green check mark.
+
+    The fix is to keep the terms in the arithmetic and mark the verdict
+    non-decisive, which the policy engine already treats as review.
+    """
+    for expression in ("MIT AND SomeUnknownLicense",
+                       "MIT AND (GPL-2.0 OR SomethingNobodyHeardOf)"):
+        verdict = judge_expression(expression)
+        assert not verdict.decisive, f"{expression} claimed to be decisive"
+        decision, _ = evaluate(verdict, Policy())
+        assert decision != Decision.ALLOW, f"{expression} -> {decision.value}"
+
+    # Control: no unknown term, so an AND of permissive licenses stays clear.
+    # Without this the test would pass on a version that simply never decides.
+    clean = judge_expression("MIT AND Apache-2.0")
+    assert clean.decisive
+    assert evaluate(clean, Policy())[0] == Decision.ALLOW
+
+
+@case
+def test_with_exception_changes_the_answer_for_classpath() -> None:
+    """``GPL-2.0 WITH Classpath-exception-2.0`` is not plain GPL-2.0.
+
+    The exception exists so that linking a library into your own program does
+    not put the program under the GPL. Reporting the bare GPL-2.0 obligation
+    for it is wrong in the expensive direction: it tells a team their closed
+    source product is infected when it is not, and the usual response is to
+    drop a dependency they were free to use.
+
+    Both spellings must work. ``GPL-2.0-with-classpath-exception`` is a retired
+    single-token id, and SBOM generators still emit it - it appears three times
+    in one real BOM.
+    """
+    from licenselens.judge import COPYLEFT_FILE, COPYLEFT_PROJECT
+
+    for expression in ("GPL-2.0-only WITH Classpath-exception-2.0",
+                       "GPL-2.0-with-classpath-exception"):
+        verdict = judge_expression(expression)
+        assert verdict.decisive, f"{expression} was not decided"
+        assert verdict.copyleft == COPYLEFT_FILE, (
+            f"{expression} -> copyleft {verdict.copyleft}, expected file-level; "
+            "the linking carve-out was not applied"
+        )
+        decision, _ = evaluate(verdict, Policy())
+        assert decision == Decision.ALLOW, decision
+
+    # Control: the bare license must still be strong copyleft. If this ever
+    # matches, the exception leaked onto the base license and GPL-2.0 itself
+    # would start reading as shippable.
+    bare = judge_expression("GPL-2.0-only")
+    assert bare.copyleft == COPYLEFT_PROJECT, bare.copyleft
+
+    # An exception we do not know must not be assumed harmless.
+    unknown = judge_expression("GPL-2.0 WITH SomeCompany-exception")
+    assert not unknown.decisive, "an unknown exception was treated as understood"
+
+
+@case
+def test_parenthesised_or_is_a_choice_not_a_stack() -> None:
+    """``MIT AND (GPL-2.0 OR Apache-2.0)`` may be shipped as MIT alone.
+
+    A flat token scan sees three ids and an AND, and takes the worst of all
+    three - so it blocks. But the parenthesised OR is a choice: pick Apache-2.0
+    and the AND reduces to MIT AND Apache-2.0, both permissive.
+
+    The mirror image matters too: the id must keep its parentheses in the
+    report. Dropping them prints ``MIT AND GPL-2.0 OR Apache-2.0``, which is a
+    different license from the one in the document, and the report is meant to
+    be quotable.
+    """
+    verdict = judge_expression("MIT AND (GPL-2.0 OR Apache-2.0)")
+    assert verdict.copyleft != "project", (
+        "the parenthesised OR was folded as if both branches applied"
+    )
+    assert evaluate(verdict, Policy())[0] == Decision.ALLOW
+
+    # Unparenthesised, the same ids genuinely stack, and that must still block.
+    stacked = judge_expression("MIT AND GPL-2.0")
+    assert evaluate(stacked, Policy())[0] == Decision.BLOCK
+
+    # The id stays quotable.
+    assert "(" in verdict.spdx_id and ")" in verdict.spdx_id, verdict.spdx_id
+
+
+@case
+def test_policy_override_applies_to_version_suffixed_ids() -> None:
+    """A signed-off exception must survive the ``-or-later`` suffix.
+
+    ``accept:`` in a policy file only takes ids the judge can emit as profiles,
+    so ``AGPL-3.0`` is the only spelling a user can write. SBOMs and manifests
+    routinely say ``AGPL-3.0-or-later``. The suffix was never stripped before
+    the override lookup, so the recorded decision matched nothing and the
+    dependency was blocked anyway.
+
+    That failure is invisible in the config: the file says the license is
+    accepted, the report says blocked, and the reviewer has to pick which of
+    their own tools to believe.
+    """
+    policy = Policy(overrides={"AGPL-3.0": Decision.REVIEW})
+    for expression in ("AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"):
+        decision, findings = evaluate(judge_expression(expression), policy)
+        assert any(f.code == "POLICY-OVERRIDE" for f in findings), (
+            f"{expression}: the signed-off decision was not applied"
+        )
+        assert decision == Decision.REVIEW, decision
+
+    # The fallback must stay narrow: an override for GPL-3.0 may not silently
+    # accept GPL-2.0, which is a different license with different obligations.
+    gpl3 = Policy(overrides={"GPL-3.0": Decision.ALLOW})
+    decision, findings = evaluate(judge_expression("GPL-2.0-or-later"), gpl3)
+    assert not any(f.code == "POLICY-OVERRIDE" for f in findings), (
+        "a GPL-3.0 override leaked onto GPL-2.0"
+    )
+    assert decision == Decision.BLOCK
+
+
+@case
+def test_sbom_missing_license_is_a_gap_not_a_finding() -> None:
+    """An SBOM that omits a license is not the same as a package without one.
+
+    Repository audit and SBOM reading look alike and must not behave alike. In
+    a repository we opened the tree and found no LICENSE file - that is a legal
+    finding. In an SBOM, an empty license field usually means the generator did
+    not populate it, and treating it as "all rights reserved" produced dozens
+    of false blocks against packages that are plainly MIT.
+
+    Fixture: components copied verbatim from CycloneDX/bom-examples
+    juice-shop v11.1.2 (CC0-1.0), where 37 of 840 components carry no license.
+    """
+    from licenselens.sbom import load_sbom
+
+    doc = load_sbom(FIXTURES / "sbom" / "cyclonedx-juiceshop-subset.json", Policy())
+    assert doc.format == "cyclonedx"
+
+    by_name = {e.name: e for e in doc.entries}
+    # config-chain and moment are genuinely unlicensed in the source BOM.
+    missing = by_name["config-chain"]
+    assert missing.decision == Decision.REVIEW, missing.decision
+    assert [f.code for f in missing.findings] == ["LICENSE-MISSING"]
+    assert missing.decision != Decision.BLOCK
+
+    # And a component that does declare MIT must still be cleared: the leniency
+    # above must not have been implemented by making everything review.
+    assert by_name["body-parser"].decision == Decision.ALLOW
+    assert by_name["body-parser"].license_declared == "MIT"
+
+
+@case
+def test_sbom_reads_concluded_license_when_declared_is_noassertion() -> None:
+    """SPDX files usually state NOASSERTION as one field and the license in the other.
+
+    The real shape in the wild - and in this fixture, which is the unmodified
+    SPDX 2.3 example11 document - is ``licenseDeclared: NOASSERTION`` next to
+    ``licenseConcluded: MIT``: the scanner declined to conclude anything while
+    the package states its own license.
+
+    Reading the sentinel first reports every such package as unknown. Reading
+    the real field first is not a guess: SPDX defines the declared value as the
+    package's own statement, which is what the question is about.
+    """
+    from licenselens.sbom import load_sbom
+
+    doc = load_sbom(FIXTURES / "sbom" / "spdx-2.3-example11.spdx.json", Policy())
+    assert doc.format == "spdx"
+    by_name = {e.name: e for e in doc.entries}
+
+    # hyper declares NOASSERTION and concludes MIT.
+    hyper = by_name["hyper"]
+    assert hyper.license_declared == "MIT", hyper.license_declared
+    assert hyper.decision == Decision.ALLOW, hyper.decision
+
+    # pretty_env_logger concludes an OR expression, which must not be flattened.
+    logger = by_name["pretty_env_logger"]
+    assert "OR" in logger.license_declared, logger.license_declared
+    assert logger.decision == Decision.ALLOW, logger.decision
+
+
+@case
+def test_sbom_rejects_a_document_it_cannot_read() -> None:
+    """An unreadable SBOM must fail loudly, not scan as empty and pass.
+
+    A CI job whose report step silently produced nothing exits 0, and the gate
+    that was supposed to protect the release passes every release. Exit 2
+    separates "your document is broken" from "a dependency is blocked", which
+    are different people's problems.
+    """
+    import json
+    import tempfile
+
+    from licenselens.sbom import SbomError, load_sbom
+
+    with tempfile.TemporaryDirectory() as tmp:
+        # Valid JSON, but an inventory format this tool does not read. Guessing
+        # between CycloneDX and SPDX is what produces the wrong answers.
+        path = pathlib.Path(tmp) / "requirements.json"
+        path.write_text(json.dumps({"dependencies": [{"name": "requests"}]}),
+                        encoding="utf-8")
+        try:
+            load_sbom(path)
+        except SbomError as exc:
+            assert "CycloneDX" in str(exc) and "SPDX" in str(exc), str(exc)
+        else:
+            raise AssertionError("an unreadable document was accepted")
+
+        # Not JSON at all: the message must name the XML conversion route
+        # rather than dumping a JSONDecodeError traceback.
+        xml = pathlib.Path(tmp) / "bom.xml"
+        xml.write_text("<bom/>", encoding="utf-8")
+        try:
+            load_sbom(xml)
+        except SbomError as exc:
+            assert "XML" in str(exc), str(exc)
+        else:
+            raise AssertionError("an XML file was accepted")
+
+
+@case
+def test_sbom_reads_spdx_3_graph_and_follows_license_relationships() -> None:
+    """SPDX 3.0 keeps the license on a separate node, linked by a relationship.
+
+    The obvious reading - look for a ``licenseDeclared`` key on the package -
+    finds nothing, because in 3.0 there is no such key: a ``Relationship`` with
+    ``relationshipType: hasDeclaredLicense`` points at a
+    ``simplelicensing_LicenseExpression`` node elsewhere in the ``@graph``.
+
+    Getting this wrong is quiet and total: every 3.0 document reads as "no
+    licenses found", which looks like a clean SBOM. Fixture is the unmodified
+    SPDX example1 document, whose package is genuinely GPL-3.0-or-later - so
+    the correct output is a *block*, and a reader that finds nothing would have
+    cleared a GPL dependency.
+    """
+    from licenselens.sbom import load_sbom
+
+    doc = load_sbom(FIXTURES / "sbom" / "spdx-3.0-example1.spdx3.json", Policy())
+    assert doc.format == "spdx"
+    assert doc.spec_version == "SPDX-3.0", doc.spec_version
+    assert doc.entries, "no packages were read from the @graph"
+
+    package = doc.entries[0]
+    assert package.name == "hello", package.name
+    assert package.license_declared == "GPL-3.0-or-later", package.license_declared
+    assert package.decision == Decision.BLOCK, package.decision
+
+
+@case
+def test_sbom_cli_exit_code_separates_broken_document_from_blocked_dependency() -> None:
+    """Exit 2 means "your SBOM is unreadable"; exit 1 means "a dependency is blocked".
+
+    Both are failures, but they belong to different people. Collapsing them
+    sends a CI failure to the legal reviewer when the pipeline owner broke the
+    export step, and the report gets read as "our licenses are bad" when the
+    real problem was a truncated file.
+    """
+    import contextlib
+    import io
+    import json
+    import tempfile
+
+    from licenselens.cli import main
+
+    with tempfile.TemporaryDirectory() as tmp:
+        broken = pathlib.Path(tmp) / "not-a-bom.json"
+        broken.write_text(json.dumps({"hello": "world"}), encoding="utf-8")
+
+        with contextlib.redirect_stderr(io.StringIO()), \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = main(["sbom", str(broken)])
+        assert code == 2, f"unreadable document exited {code}, expected 2"
+
+        clean = FIXTURES / "sbom" / "spdx-2.3-example11.spdx.json"
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = main(["sbom", str(clean), "--fail-on", "never"])
+        assert code == 0, code
+
+        # The SPDX 3.0 document contains GPL-3.0-or-later, so a blocking gate
+        # must trip. Without this the "exit 0" above could pass on a reader
+        # that returns no entries at all.
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = main(["sbom", str(FIXTURES / "sbom" / "spdx-3.0-example1.spdx3.json")])
+        assert code == 1, f"a blocked component exited {code}, expected 1"
+
+
+@case
+def test_probe_uses_the_license_filename_the_page_already_listed() -> None:
+    """A repo with `license.md` must not be reported as having no license.
+
+    ``vercel/next.js`` keeps its MIT text in ``license.md``. The static filename
+    table holds the usual spellings (LICENSE, LICENSE.md, COPYING, ...), so it
+    misses that one - and the code that was supposed to read the filename off
+    the repository page was never given the page. The result was a decisive
+    "no license file: all rights reserved" for a 143k-star MIT project.
+
+    That is the most damaging wrong answer available: it blocks a dependency
+    that is free to use, and it does so *confidently*. The fix is to hand the
+    already-fetched page to the candidate builder, which this asserts directly -
+    no network, because the page markup is what is being tested.
+    """
+    from licenselens.probe import Prober
+
+    page = (
+        '<a title="license.md" aria-label="license.md, (File)" '
+        'class="Link--primary" href="/vercel/next.js/blob/canary/license.md">license.md</a>'
+    )
+    candidates = Prober()._license_candidates("vercel/next.js", page)
+    assert candidates, "no candidates at all"
+    assert candidates[0] == "license.md", (
+        f"the page's own filename was not used first: {candidates[:3]}"
+    )
+
+    # The static fallback must still be there for repositories whose page lists
+    # nothing useful - dropping it would trade one miss for another.
+    bare = Prober()._license_candidates("someone/else", "")
+    assert "LICENSE" in bare, bare[:3]
+
+
+@case
+def test_probe_html_channel_passes_the_page_to_candidate_extraction() -> None:
+    """Wiring test: the page must actually reach the candidate builder.
+
+    The bug above was not a wrong regex, it was a missing argument - three call
+    sites fetched the repository page and then called the helper without it, so
+    the "use the filename the page lists" branch was dead code in every path.
+    A unit test on the helper alone would have stayed green for months.
+
+    This stubs the fetcher and asserts the observed request sequence, which is
+    the only thing that can catch a dropped argument.
+    """
+    from licenselens.probe import Prober
+
+    requested: list[str] = []
+    page = (
+        '<a href="/acme/widget/blob/main/license.md">license.md</a>'
+        '<span id="repo-stars-counter-star" title="12,345">12.3k</span>'
+        '"license":{"spdxId":"MIT"}'
+    )
+    mit_text = load("mit.txt")
+
+    class FakeFetcher:
+        def get(self, url, headers=None):
+            requested.append(url)
+            if url.endswith("/acme/widget"):
+                return page
+            if "license.md" in url:
+                return mit_text
+            raise AssertionError(f"unexpected request: {url}")
+
+    record = Prober(fetcher=FakeFetcher()).probe_html("acme/widget")
+    assert record.license_file == "license.md", record.license_file
+    assert record.verdict is not None and record.verdict.spdx_id == "MIT", (
+        record.verdict.spdx_id if record.verdict else None
+    )
+    # It must not have asked for the static-list spellings first; one blob URL
+    # per candidate is a request budget, and wasting it on guesses is how the
+    # API quota disappears.
+    blob_requests = [u for u in requested if "/blob/" in u]
+    assert blob_requests and "license.md" in blob_requests[0], blob_requests[:3]
+
+
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

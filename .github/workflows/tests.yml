@@ -117,3 +117,25 @@ jobs:
             exit 1
           fi
           echo "typo guard ok (exit 2)"
+
+      # The SBOM reader is the one path where the input is a document somebody
+      # else wrote, so its failure modes are not the ones our own fixtures would
+      # surface. Both committed documents must parse, and an unreadable one must
+      # exit 2 - not 0, which would read as "no licenses found, all clear".
+      - name: Read both committed SBOM fixtures
+        run: |
+          python licenselens.py sbom tests/fixtures/sbom/cyclonedx-juiceshop-subset.json
+          python licenselens.py sbom tests/fixtures/sbom/spdx-2.3-example11.spdx.json
+
+      - name: An unreadable SBOM must exit 2, not pass as empty
+        run: |
+          printf '{"hello": "world"}' > broken.json
+          set +e
+          python licenselens.py sbom broken.json
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "expected exit 2 for an unreadable document, got $status"
+            exit 1
+          fi
+          echo "sbom guard ok (exit 2)"

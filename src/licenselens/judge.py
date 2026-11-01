@@ -438,6 +438,132 @@ PROFILES: tuple[Profile, ...] = (
             "This is not an OSI-approved open source license; read every clause.",
         ),
     ),
+    # ------------------------------------------------------------------
+    # The older versions below are not "completeness for its own sake".
+    # Each one showed up by its SPDX id in the first two real SBOMs this
+    # tool was pointed at (CycloneDX juice-shop, the SPDX examples), and an
+    # id the judge does not know becomes a block - which on a Java SBOM
+    # means a wall of blocks and nobody reading the report.
+    #
+    # Every signal is a *version-qualified title* because the 1.x texts are
+    # near-verbatim supersets of the 2.x ones. A bare "eclipse public
+    # license" signal would score on EPL-2.0 as well and hand the win to
+    # whichever profile happened to sort first.
+    # ------------------------------------------------------------------
+    Profile(
+        spdx_id="EPL-1.0",
+        name="Eclipse Public License 1.0",
+        signals=(
+            # The EPL 2.0 title is "Eclipse Public License - v 2.0", so this
+            # adjacency cannot fire on it.
+            sig(r"\beclipse public license\s*-\s*v\s*1\.0\b", W_TITLE, REGION_HEAD),
+            sig(r"eclipse public license\s*-\s*v\s*1\.0", W_STRONG),
+            # EPL 1.0 says "Commercial distributors"; 2.0 reworded the clause.
+            sig(r"commercial distributors of the program in object code form",
+                W_MEDIUM),
+        ),
+        commercial=COMMERCIAL_OK,
+        copyleft=COPYLEFT_FILE,
+        obligations=(
+            "Weak, module-level copyleft: source must be offered for the modules you modify.",
+            "Superseded by EPL-2.0, which adds an explicit secondary-license option to GPL.",
+            "Recipients get a patent license from each contributor, with a retaliation clause.",
+        ),
+    ),
+    Profile(
+        spdx_id="CDDL-1.0",
+        name="Common Development and Distribution License 1.0",
+        signals=(
+            sig(r"common development and distribution license\s*\(cddl\)\s*version 1\.0",
+                W_TITLE, REGION_HEAD),
+            sig(r"\bcddl\b[\s\S]{0,40}?version 1\.0", W_STRONG),
+            sig(r"a work which combines covered software or portions thereof with "
+                r"code not governed by the terms of this license", W_STRONG),
+        ),
+        commercial=COMMERCIAL_OK,
+        copyleft=COPYLEFT_FILE,
+        obligations=(
+            "File-level copyleft, same shape as CDDL-1.1.",
+            "Superseded by CDDL-1.1, which added the GPL-2.0 secondary-license "
+            "compatibility that 1.0 lacks.",
+        ),
+    ),
+    Profile(
+        spdx_id="CDDL-1.1",
+        name="Common Development and Distribution License 1.1",
+        signals=(
+            sig(r"common development and distribution license\s*\(cddl\)\s*version 1\.1",
+                W_TITLE, REGION_HEAD),
+            sig(r"\bcddl\b[\s\S]{0,40}?version 1\.1", W_STRONG),
+            # The definition of "Larger Work" is the clause that decides whether
+            # your own code is infected, so it is the one worth matching.
+            sig(r"a work which combines covered software or portions thereof with "
+                r"code not governed by the terms of this license", W_STRONG),
+        ),
+        commercial=COMMERCIAL_OK,
+        copyleft=COPYLEFT_FILE,
+        obligations=(
+            "File-level copyleft: publishing changes to CDDL-covered files is required.",
+            "A Larger Work may be distributed under other terms, but the CDDL files stay CDDL.",
+            "Patent grant included, with a patent-litigation termination clause.",
+        ),
+    ),
+    Profile(
+        spdx_id="MPL-1.1",
+        name="Mozilla Public License 1.1",
+        signals=(
+            sig(r"\bmozilla public license\b[\s\S]{0,30}?version 1\.1", W_TITLE,
+                REGION_HEAD),
+            sig(r"mozilla public license version 1\.1", W_STRONG),
+            # MPL-1.1 and MPL-2.0 share "Exhibit A" and "Covered Code"; the
+            # 2.0 text alone carries the secondary-license mechanism.
+            sig(r"incompatible with secondary licenses", W_MEDIUM),
+        ),
+        commercial=COMMERCIAL_OK,
+        copyleft=COPYLEFT_FILE,
+        obligations=(
+            "File-level copyleft. Superseded by MPL-2.0.",
+            "No secondary-license escape hatch: MPL-1.1 is GPL-incompatible in practice.",
+        ),
+    ),
+    Profile(
+        spdx_id="0BSD",
+        name="BSD Zero Clause License",
+        signals=(
+            # No title in the canonical text, so the operative sentence carries
+            # the whole weight. It is tagged as a head signal because that is
+            # where it physically sits - the grant is the opening line - not
+            # because it is a heading. ISC's otherwise-identical sentence ends
+            # "is hereby granted, provided that ...", and the full stop this
+            # pattern requires is exactly what separates "no attribution" from
+            # "keep the notice". Getting that backwards would tell someone they
+            # may strip an ISC notice, so the distinction is asserted by test.
+            sig(r"permission to use,\s*copy,\s*modify,\s*and/?or distribute this "
+                r"software for any purpose with or without fee is hereby granted\.",
+                W_TITLE, REGION_HEAD),
+            sig(r"the software is provided\s*[\"\u201c]?as is", W_MEDIUM),
+        ),
+        commercial=COMMERCIAL_OK,
+        obligations=(
+            "No obligations whatsoever - not even attribution. The most permissive license in use.",
+            "Do not confuse with ISC/BSD: those require the notice to be retained.",
+        ),
+    ),
+    Profile(
+        spdx_id="WTFPL",
+        name="Do What The Fuck You Want To Public License 2.0",
+        signals=(
+            sig(r"do what the fuck you want to public license", W_TITLE, REGION_HEAD),
+            sig(r"you just do what the fuck you want to", W_STRONG),
+            sig(r"everyone is permitted to copy and distribute verbatim or modified "
+                r"copies of this license document", W_MEDIUM),
+        ),
+        commercial=COMMERCIAL_OK,
+        obligations=(
+            "No obligations. A public-domain-style dedication with no warranty.",
+            "Not OSI-approved and untested in court; some legal teams refuse it outright.",
+        ),
+    ),
 )
 
 PROFILE_BY_ID = {p.spdx_id: p for p in PROFILES}
@@ -806,6 +932,129 @@ def judge(text: str, *, head_chars: int = HEAD_CHARS) -> Verdict:
 _SPDX_TOKEN = re.compile(r"[A-Za-z0-9.+\-]+")
 
 
+# --------------------------------------------------------------------------
+# License exceptions (SPDX "WITH")
+# --------------------------------------------------------------------------
+#
+# An exception is not a license: it *removes* an obligation the base license
+# would otherwise impose. Treating ``GPL-2.0-only WITH Classpath-exception-2.0``
+# as an unknown id - which is what happened before this table existed - blocks
+# every one of the ~25 EPL/CDDL-era Java components that legitimately use it,
+# and a report where a third of the rows are false blocks gets ignored
+# wholesale. Getting it wrong in the other direction is worse: ignoring the
+# WITH clause would report plain GPL-2.0, i.e. "your code becomes GPL", about a
+# library whose whole point is that it does not.
+#
+# Only exceptions whose effect on the copyleft scope is unambiguous are listed.
+# ``Classpath`` and ``GCC`` say the opposite of what the bare license says, so
+# they downgrade copyleft to file level (modify the library, publish *those*
+# changes; link against it freely). Anything not listed stays unknown and
+# therefore stays a review item with the base license's own verdict.
+
+EXCEPTION_EFFECT_LINKING = "linking"
+EXCEPTION_EFFECT_NEUTRAL = "neutral"
+
+KNOWN_EXCEPTIONS: dict[str, tuple[str, str]] = {
+    # id (lower-case key)                       name, effect
+    "classpath-exception-2.0": (
+        "Classpath exception 2.0 (linking independent modules is permitted)",
+        EXCEPTION_EFFECT_LINKING,
+    ),
+    "gcc-exception-2.0": (
+        "GCC runtime library exception 2.0", EXCEPTION_EFFECT_LINKING,
+    ),
+    "gcc-exception-3.1": (
+        "GCC runtime library exception 3.1", EXCEPTION_EFFECT_LINKING,
+    ),
+    "llvm-exception": (
+        "LLVM exception (embedded object code and GPLv2 combination)", EXCEPTION_EFFECT_LINKING,
+    ),
+    "autoconf-exception-2.0": ("Autoconf exception 2.0", EXCEPTION_EFFECT_NEUTRAL),
+    "autoconf-exception-3.0": ("Autoconf exception 3.0", EXCEPTION_EFFECT_NEUTRAL),
+    "bison-exception-2.2": ("Bison exception 2.2", EXCEPTION_EFFECT_NEUTRAL),
+    "linux-syscall-note": (
+        "Linux syscall note (user programs are not derived works)",
+        EXCEPTION_EFFECT_NEUTRAL,
+    ),
+    "font-exception-2.0": (
+        "Font exception 2.0 (embedding in a document does not make it GPL)",
+        EXCEPTION_EFFECT_LINKING,
+    ),
+    "openssl-exception": ("OpenSSL exception", EXCEPTION_EFFECT_LINKING),
+}
+
+#: Deprecated SPDX ids that spell "base license WITH exception" as one token.
+#: SPDX retired these in favour of the WITH form, but SBOM generators keep
+#: emitting them: 3 of them appear in a single real dropwizard BOM.
+_DEPRECATED_WITH_IDS: dict[str, tuple[str, str]] = {
+    "gpl-2.0-with-classpath-exception": ("GPL-2.0", "classpath-exception-2.0"),
+    "gpl-2.0-with-autoconf-exception": ("GPL-2.0", "autoconf-exception-2.0"),
+    "gpl-2.0-with-bison-exception": ("GPL-2.0", "bison-exception-2.2"),
+    "gpl-2.0-with-font-exception": ("GPL-2.0", "font-exception-2.0"),
+    "gpl-2.0-with-gcc-exception": ("GPL-2.0", "gcc-exception-2.0"),
+    "gpl-3.0-with-autoconf-exception": ("GPL-3.0", "autoconf-exception-3.0"),
+    "gpl-3.0-with-gcc-exception": ("GPL-3.0", "gcc-exception-3.1"),
+}
+
+
+def _apply_exception(base: Profile, exception_key: str,
+                     display: str = "") -> Verdict:
+    """Attach an exception to a base license verdict, or say we do not know it."""
+    known = KNOWN_EXCEPTIONS.get(exception_key)
+    verdict = _verdict_for_profile(base)
+    # ``display`` keeps the caller's spelling in the id: SPDX ids are
+    # case-insensitive to look up but the user's document is what the report
+    # must be traceable back to.
+    verdict.spdx_id = f"{base.spdx_id} WITH {display or exception_key}"
+    if known is None:
+        verdict.decisive = False
+        verdict.warnings.append(
+            f"The exception {exception_key!r} is not in this tool's table, so its "
+            "effect on the base license was not assessed. The verdict below is for "
+            f"{base.spdx_id} alone."
+        )
+        return verdict
+
+    name, effect = known
+    verdict.name = f"{base.name} with {name}"
+    if effect == EXCEPTION_EFFECT_LINKING and base.copyleft in (
+        COPYLEFT_PROJECT, COPYLEFT_NETWORK
+    ):
+        # The exception is precisely a carve-out from the strong copyleft: your
+        # own modules stay yours. What survives is the file-level obligation on
+        # changes made *to the library itself*.
+        verdict.copyleft = COPYLEFT_FILE
+        verdict.network_clause = False
+        verdict.obligations = base.obligations + (
+            f"Exception ({exception_key}): linking independent modules does NOT put "
+            "them under the base license.",
+            "Modifications to the covered library itself must still be published.",
+        )
+        verdict.warnings.append(
+            f"{exception_key} downgrades the copyleft from "
+            f"{base.copyleft} to {COPYLEFT_FILE}: it applies to the library, not to "
+            "the code that links it. Confirm the exception text actually covers your "
+            "linking mode."
+        )
+    else:
+        verdict.obligations = base.obligations + (
+            f"Exception ({exception_key}): {name}.",
+        )
+    return verdict
+
+
+def _split_with(raw: str) -> tuple[str, str] | None:
+    """Split ``BASE WITH EXCEPTION`` at the operator, keeping parentheses."""
+    match = re.search(r"\bWITH\b", raw, re.I)
+    if not match:
+        return None
+    base = raw[: match.start()].strip().strip("()").strip()
+    exception = raw[match.end():].strip().strip("()").strip()
+    if not base or not exception:
+        return None
+    return base, exception
+
+
 def judge_expression(expression: str) -> Verdict:
     """Evaluate an SPDX license *expression* such as ``MIT OR Apache-2.0``.
 
@@ -817,6 +1066,27 @@ def judge_expression(expression: str) -> Verdict:
     if not raw:
         return judge("")
 
+    # The two SPDX sentinels are tokens with defined meaning, not unknown ids.
+    # Falling through to "UNRECOGNIZED" makes the tool report NONE - explicitly
+    # "no license" - as if the document had a typo, and it reports NOASSERTION -
+    # "nobody checked" - the same way. Those need different remedies: the first
+    # is a legal finding about the package, the second is a gap in the document.
+    sentinel = raw.upper()
+    if sentinel in ("NONE", "NOASSERTION"):
+        verdict = judge("")
+        verdict.spdx_id = sentinel
+        verdict.name = (
+            "No license (SPDX NONE)" if sentinel == "NONE"
+            else "License not asserted (SPDX NOASSERTION)"
+        )
+        verdict.warnings = [
+            "NONE means the package carries no license: all rights reserved."
+            if sentinel == "NONE"
+            else "NOASSERTION means nobody determined the license; it is not "
+                 "evidence that there is none."
+        ]
+        return verdict
+
     # A concrete license id is not an expression. "GPL-3.0-or-later" contains OR
     # as a substring, so it must be resolved as an id before any operator
     # parsing happens - otherwise every "-or-later" license is misreported as a
@@ -827,7 +1097,56 @@ def judge_expression(expression: str) -> Verdict:
         verdict.spdx_id = _canonical_token(raw, direct)
         return verdict
 
+    # A retired single-token id like ``GPL-2.0-with-classpath-exception`` means
+    # "GPL-2.0 WITH Classpath-exception-2.0". Resolved before the WITH split,
+    # because that split needs the operator's text and this spelling has none.
+    deprecated = _DEPRECATED_WITH_IDS.get(raw.lower())
+    if deprecated is not None:
+        base_id, exception_key = deprecated
+        base_profile = PROFILE_BY_ID.get(base_id)
+        if base_profile is not None:
+            verdict = _apply_exception(base_profile, exception_key,
+                                       display=exception_key)
+            verdict.warnings.append(
+                f"{raw} is a retired SPDX id; the current form is "
+                f"{base_id} WITH {exception_key}. Both are read the same way."
+            )
+            return verdict
+
+    with_parts = _split_with(raw)
+    if with_parts is not None:
+        base_text, exception_text = with_parts
+        base_profile = _lookup(base_text)
+        if base_profile is None:
+            # An expression like "A AND B WITH C" reaches here; let the generic
+            # path handle it so the unknown base is reported, not swallowed.
+            with_parts = None
+        else:
+            return _apply_exception(base_profile, exception_text.lower(),
+                                     display=exception_text)
+
     upper = raw.upper()
+    has_or = re.search(r"\bOR\b", upper) is not None
+    has_and = re.search(r"\bAND\b", upper) is not None
+
+    # A flat token scan sends every id in the string down the same path, which
+    # gets two real shapes wrong:
+    #
+    #   (CDDL-1.0 OR GPL-2.0-with-classpath-exception)
+    #       the branch is a *retired* id, resolvable only by the WITH table,
+    #       and a bare token lookup reports the whole expression as unknown;
+    #   MIT AND (GPL-2.0 OR Apache-2.0)
+    #       flattening applies the worst term across both branches instead of
+    #       across the chosen ones - the parenthesised OR is a choice, and
+    #       ignoring that blocks a component the licensee may ship freely.
+    #
+    # The first is a false alarm, the second a false block. Both disappear once
+    # the expression is parsed by its own grammar, so try that first.
+    if has_or or has_and:
+        parsed = _parse_expression(raw)
+        if parsed is not None:
+            return parsed
+
     # Only treat AND/OR as operators when they stand alone as words.
     tokens = [t for t in _SPDX_TOKEN.findall(raw)]
     ids = [t for t in tokens if t.upper() not in {"AND", "OR", "WITH", "AND/OR"}]
@@ -857,7 +1176,10 @@ def judge_expression(expression: str) -> Verdict:
             spdx_id=raw,
             name=f"Dual license, choose one: {raw}",
             confidence=1.0,
-            decisive=True,
+            # With an unknown branch anywhere in the expression, "choose the
+            # cheap one" is not something we can certify: the unknown branch
+            # might be the one that applies. Still reported, never decisive.
+            decisive=not unknown,
             candidates=[Candidate(p.spdx_id, p.name, 100) for p in known],
             commercial=best.commercial,
             copyleft=best.copyleft,
@@ -870,6 +1192,11 @@ def judge_expression(expression: str) -> Verdict:
         verdict.warnings.append(
             "OR means you may comply with any one branch; the permissive branch is the cheapest path."
         )
+        if unknown:
+            verdict.warnings.append(
+                f"Unrecognized ids in expression: {', '.join(unknown)}. One of them may "
+                "be the branch that applies, so this is not a clear answer."
+            )
         return verdict
 
     worst = max(known, key=_commercial_rank)
@@ -877,7 +1204,9 @@ def judge_expression(expression: str) -> Verdict:
         spdx_id=raw,
         name=f"Combined license, all apply: {raw}",
         confidence=1.0,
-        decisive=True,
+        # Same reasoning, sharper: under AND every branch applies, so an
+        # unknown branch is an unassessed obligation, not a footnote.
+        decisive=not unknown,
         candidates=[Candidate(p.spdx_id, p.name, 100) for p in known],
         commercial=worst.commercial,
         copyleft=worst.copyleft,
@@ -890,7 +1219,194 @@ def judge_expression(expression: str) -> Verdict:
         "AND means every branch applies at once, so the strictest obligation wins."
     )
     if unknown:
-        verdict.warnings.append(f"Unrecognized ids in expression: {', '.join(unknown)}")
+        verdict.warnings.append(
+            f"Unrecognized ids in expression: {', '.join(unknown)}. Under AND these "
+            "terms apply too, and they were not assessed."
+        )
+    return verdict
+
+
+# --------------------------------------------------------------------------
+# SPDX expression grammar
+# --------------------------------------------------------------------------
+#
+# SPDX 2.x defines the expression language as, in precedence order:
+#
+#     expression := compound | simple
+#     compound   := simple ("AND"|"OR") simple ...
+#     simple     := id ["WITH" exception] | "(" expression ")"
+#
+# Parsing it properly is not pedantry. The flat token scan this replaced could
+# not tell `MIT AND (GPL-2.0 OR Apache-2.0)` - a component you may ship as
+# MIT-plus-nothing-else - from `MIT AND GPL-2.0`, and answered with the worst
+# term in the string. That is a false block on a permissively licensed
+# component, which is the failure mode that makes people stop running the tool.
+
+
+class _ExprNode:
+    """One node of a parsed expression: a leaf id, or an AND/OR of children."""
+
+    __slots__ = ("kind", "text", "children")
+
+    def __init__(self, kind: str, text: str,
+                 children: "list[_ExprNode] | None" = None) -> None:
+        self.kind = kind          # "license" | "and" | "or"
+        self.text = text          # original spelling, for report traceability
+        self.children = children or []
+
+
+def _tokenize_expression(raw: str) -> list[str]:
+    """Split an expression into ids, operators and parentheses."""
+    return re.findall(r"\(|\)|[^\s()]+", raw)
+
+
+def _parse_expression(raw: str, depth: int = 0) -> Verdict | None:
+    """Parse and evaluate an SPDX expression. ``None`` means "let the caller try".
+
+    Returning ``None`` rather than raising keeps this on the success path only:
+    a malformed expression falls back to the flat scan, which reports it as
+    unrecognised. A parser error must never turn into a confident verdict.
+    """
+    if depth > 16:
+        return None
+    tokens = _tokenize_expression(raw)
+    if not tokens:
+        return None
+    try:
+        node, rest = _parse_or(tokens, 0)
+    except _ExpressionSyntaxError:
+        return None
+    if rest != len(tokens):
+        return None
+    return _evaluate_node(node, display=raw)
+
+
+class _ExpressionSyntaxError(ValueError):
+    pass
+
+
+def _parse_or(tokens: list[str], pos: int) -> tuple[_ExprNode, int]:
+    node, pos = _parse_and(tokens, pos)
+    children = [node]
+    while pos < len(tokens) and tokens[pos].upper() == "OR":
+        child, pos = _parse_and(tokens, pos + 1)
+        children.append(child)
+    if len(children) == 1:
+        return children[0], pos
+    return _ExprNode("or", " OR ".join(c.text for c in children), children), pos
+
+
+def _parse_and(tokens: list[str], pos: int) -> tuple[_ExprNode, int]:
+    node, pos = _parse_primary(tokens, pos)
+    children = [node]
+    while pos < len(tokens) and tokens[pos].upper() == "AND":
+        child, pos = _parse_primary(tokens, pos + 1)
+        children.append(child)
+    if len(children) == 1:
+        return children[0], pos
+    return _ExprNode("and", " AND ".join(c.text for c in children), children), pos
+
+
+def _parse_primary(tokens: list[str], pos: int) -> tuple[_ExprNode, int]:
+    if pos >= len(tokens):
+        raise _ExpressionSyntaxError("unexpected end of expression")
+    token = tokens[pos]
+    if token == "(":
+        node, pos = _parse_or(tokens, pos + 1)
+        if pos >= len(tokens) or tokens[pos] != ")":
+            raise _ExpressionSyntaxError("unbalanced parenthesis")
+        return node, pos + 1
+    if token == ")":
+        raise _ExpressionSyntaxError("unexpected close parenthesis")
+
+    # "id WITH exception" binds tighter than AND/OR.
+    if pos + 2 < len(tokens) and tokens[pos + 1].upper() == "WITH":
+        return _ExprNode("license", f"{token} WITH {tokens[pos + 2]}"), pos + 3
+    return _ExprNode("license", token), pos + 1
+
+
+def _evaluate_node(node: _ExprNode, display: str = "") -> Verdict | None:
+    """Fold a parsed tree into one verdict, or ``None`` if it cannot be folded.
+
+    ``display`` is the caller's original spelling. Rebuilding the id from the
+    tree drops the parentheses, and a report that shows ``MIT AND GPL-2.0 OR
+    Apache-2.0`` for ``MIT AND (GPL-2.0 OR Apache-2.0)`` states a different
+    license than the document does.
+    """
+    if node.kind == "license":
+        return judge_expression(node.text)
+
+    results: list[Verdict] = []
+    for child in node.children:
+        # Nested calls re-enter judge_expression, which resolves leaves
+        # (including WITH and retired ids) through exactly one code path.
+        verdict = _evaluate_node(child)
+        if verdict is None:
+            return None
+        results.append(verdict)
+
+    label = display or node.text
+    # A leaf the judge could not name has no profile. It must not be dropped
+    # from the arithmetic: under AND its terms apply, and under OR it may be
+    # the branch that applies. Either way "we do not know" is not "clear".
+    unnamed = [v for v in results if v.profile is None]
+    profiled = [v for v in results if v.profile is not None]
+    if not profiled:
+        return None
+
+    # Doubt has to survive the fold. A nested group such as
+    # ``(GPL-2.0 OR Unknown)`` carries its own profile (the cheap branch), so
+    # inspecting only ``profile is None`` at this level made the enclosing
+    # ``MIT AND (...)`` look fully understood. The unknown term was then
+    # invisible one level up - which is the same silent-drop bug as before,
+    # moved rather than fixed.
+    inherited_doubt = [v for v in results if not v.decisive]
+
+    if node.kind == "or":
+        best = min(profiled, key=lambda v: _commercial_rank(v.profile))
+        verdict = Verdict(
+            spdx_id=label,
+            name=f"Dual license, choose one: {label}",
+            confidence=1.0,
+            decisive=not unnamed and not inherited_doubt,
+            candidates=[Candidate(v.spdx_id, v.name, 100) for v in results],
+            commercial=best.commercial,
+            copyleft=best.copyleft,
+            obligations=best.obligations + (
+                f"Pick the {best.spdx_id} branch and comply with it only.",),
+            patent_grant=best.patent_grant,
+            network_clause=best.network_clause,
+            profile=best.profile,
+        )
+        verdict.warnings.append(
+            "OR means you may comply with any one branch; the permissive branch "
+            "is the cheapest path."
+        )
+    else:
+        worst = max(profiled, key=lambda v: _commercial_rank(v.profile))
+        verdict = Verdict(
+            spdx_id=label,
+            name=f"Combined license, all apply: {label}",
+            confidence=1.0,
+            decisive=not unnamed and not inherited_doubt,
+            candidates=[Candidate(v.spdx_id, v.name, 100) for v in results],
+            commercial=worst.commercial,
+            copyleft=worst.copyleft,
+            obligations=tuple(o for v in results for o in v.obligations),
+            patent_grant=all(v.patent_grant for v in profiled),
+            network_clause=any(v.network_clause for v in profiled),
+            profile=worst.profile,
+        )
+        verdict.warnings.append(
+            "AND means every branch applies at once, so the strictest obligation wins."
+        )
+
+    if unnamed or inherited_doubt:
+        names = ", ".join(v.spdx_id for v in unnamed + inherited_doubt)
+        verdict.warnings.append(
+            f"Unassessed terms in expression: {names}. They were not resolved, so "
+            "this is not a clear answer either way."
+        )
     return verdict
 
 

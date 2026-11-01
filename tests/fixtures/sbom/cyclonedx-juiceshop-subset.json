@@ -1,0 +1,406 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.2",
+  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2020-04-13T20:20:39+00:00",
+    "component": {
+      "type": "library",
+      "bom-ref": "pkg:npm/juice-shop@11.1.2",
+      "name": "juice-shop",
+      "version": "11.1.2",
+      "description": "Probably the most modern and sophisticated insecure web application",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:npm/juice-shop@11.1.2",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://owasp-juice.shop"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/bkimminich/juice-shop/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/bkimminich/juice-shop.git"
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "licenselens:fixture",
+        "value": "components copied verbatim from CycloneDX/bom-examples SBOM/juice-shop/v11.1.2/bom.json (CC0-1.0) @7d9172d0"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/body-parser@1.19.0",
+      "name": "body-parser",
+      "version": "1.19.0",
+      "description": "Node.js body parsing middleware",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "96b2709e57c9c4e09a6fd66a8fd979844f69f08a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:npm/body-parser@1.19.0",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/expressjs/body-parser#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/expressjs/body-parser/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/expressjs/body-parser.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/atob@2.1.2",
+      "name": "atob",
+      "version": "2.1.2",
+      "description": "atob for Node.JS and Linux / Mac / Windows CLI (it's a one-liner)",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "6d9517eb9e030d2436666651e86bd9f6f13533c9"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "(MIT OR Apache-2.0)"
+          }
+        }
+      ],
+      "purl": "pkg:npm/atob@2.1.2",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://git.coolaj86.com/coolaj86/atob.js.git"
+        },
+        {
+          "type": "vcs",
+          "url": "git://git.coolaj86.com/coolaj86/atob.js.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/rc@1.2.8",
+      "name": "rc",
+      "version": "1.2.8",
+      "description": "hardwired configuration loader",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "cd924bf5200a075b83c188cd6b9e211b7fc0d3ed"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "(BSD-2-Clause OR MIT OR Apache-2.0)"
+          }
+        }
+      ],
+      "purl": "pkg:npm/rc@1.2.8",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/dominictarr/rc#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/dominictarr/rc/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/dominictarr/rc.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/amdefine@1.0.1",
+      "name": "amdefine",
+      "version": "1.0.1",
+      "description": "Provide AMD's define() API for declaring modules in the AMD format",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "4a5282ac164729e93619bcfd3ad151f817ce91f5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-3-Clause OR MIT"
+          }
+        }
+      ],
+      "purl": "pkg:npm/amdefine@1.0.1",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "http://github.com/jrburke/amdefine"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/jrburke/amdefine/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/jrburke/amdefine.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/wordwrap@0.0.3",
+      "name": "wordwrap",
+      "version": "0.0.3",
+      "description": "Wrap those words. Show them at what columns to start and stop.",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "a3d5da6cd5c0bc0008d37234bbaf1bed63059107"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:npm/wordwrap@0.0.3",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/substack/node-wordwrap#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/substack/node-wordwrap/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git://github.com/substack/node-wordwrap.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/sanitize-filename@1.6.3",
+      "name": "sanitize-filename",
+      "version": "1.6.3",
+      "description": "Sanitize a string for use as a filename",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "755ebd752045931977e30b2025d340d7c9090378"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "WTFPL OR ISC"
+          }
+        }
+      ],
+      "purl": "pkg:npm/sanitize-filename@1.6.3",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/parshap/node-sanitize-filename#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/parshap/node-sanitize-filename/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+ssh://git@github.com/parshap/node-sanitize-filename.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/expand-template@2.0.3",
+      "name": "expand-template",
+      "version": "2.0.3",
+      "description": "Expand placeholders in a template string",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "6e14b3fcee0f3a6340ecb57d2e8918692052a47c"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "(MIT OR WTFPL)"
+          }
+        }
+      ],
+      "purl": "pkg:npm/expand-template@2.0.3",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/ralphtheninja/expand-template"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/ralphtheninja/expand-template/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/ralphtheninja/expand-template.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/config-chain@1.1.12",
+      "name": "config-chain",
+      "version": "1.1.12",
+      "description": "HANDLE CONFIGURATION ONCE AND FOR ALL",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "0fde8d091200eb5e808caf25fe618c02f48e4efa"
+        }
+      ],
+      "purl": "pkg:npm/config-chain@1.1.12",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "http://github.com/dominictarr/config-chain"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/dominictarr/config-chain/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/dominictarr/config-chain.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/spdx-license-ids@3.0.5",
+      "name": "spdx-license-ids",
+      "version": "3.0.5",
+      "description": "A list of SPDX license identifiers",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "3694b5804567a458d3c8045842a6358632f62654"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "CC0-1.0"
+          }
+        }
+      ],
+      "purl": "pkg:npm/spdx-license-ids@3.0.5",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/shinnn/spdx-license-ids#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/shinnn/spdx-license-ids/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/shinnn/spdx-license-ids.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/moment@2.0.0",
+      "name": "moment",
+      "version": "2.0.0",
+      "description": "Parse, manipulate, and display dates.",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "2bbc5b44c321837693ab6efcadbd46ed946211fe"
+        }
+      ],
+      "purl": "pkg:npm/moment@2.0.0",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "http://momentjs.com"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/timrwood/moment/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+https://github.com/timrwood/moment.git"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/busboy@0.2.14",
+      "name": "busboy",
+      "version": "0.2.14",
+      "description": "A streaming parser for HTML form data for node.js",
+      "hashes": [
+        {
+          "alg": "SHA-1",
+          "content": "6c2a622efcf47c57bbbe1e2a9c37ad36c7925453"
+        }
+      ],
+      "purl": "pkg:npm/busboy@0.2.14",
+      "externalReferences": [
+        {
+          "type": "website",
+          "url": "https://github.com/mscdex/busboy#readme"
+        },
+        {
+          "type": "issue-tracker",
+          "url": "https://github.com/mscdex/busboy/issues"
+        },
+        {
+          "type": "vcs",
+          "url": "git+ssh://git@github.com/mscdex/busboy.git"
+        }
+      ]
+    }
+  ]
+}

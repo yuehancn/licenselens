@@ -20,5 +20,21 @@ header to a license body causes GitHub to report "Other" instead of
 audience that cares about it. The notice therefore lives here.
 
 Third-party license texts in tests/fixtures/ are reproduced verbatim from the
-GitHub Licenses API and the SPDX License List so that the test suite asserts
-against the real documents. They remain under their own licenses.
+GitHub Licenses API and the SPDX License List (spdx/license-list-data) so that
+the test suite asserts against the real documents. They remain under their own
+licenses.
+
+Third-party SBOM documents in tests/fixtures/sbom/ are reproduced from:
+
+  - CycloneDX/bom-examples, SBOM/juice-shop/v11.1.2/bom.json (CC0-1.0). Only a
+    subset of its component objects is committed, unmodified, so the fixture
+    keeps the mixed SPDX-id / expression / name-only / absent license shapes
+    that make real BOMs hard to read.
+  - spdx/spdx-examples, software/example11/spdx2.3/sbom.spdx.json and
+    software/example1/spdx3.0/example1.spdx3.json. Both are committed whole and
+    unmodified; the second is the fixture that proves SPDX 3.0 license
+    expressions are reached through relationships rather than package fields.
+
+Those repositories' own licenses are GPL-3.0 and CC0-1.0 respectively; the test
+data is used as data, and its provenance is recorded here so that a reader can
+re-derive every assertion.

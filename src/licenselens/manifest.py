@@ -39,13 +39,23 @@ class ManifestEntry:
     decision: Decision = Decision.REVIEW
     findings: list[Finding] = field(default_factory=list)
     note: str = ""
+    #: Package URL, when the source document carries one (SBOMs do, manifests
+    #: do not). Kept because it is the only identifier that survives a
+    #: dependency being vendored under a different name.
+    purl: str = ""
+    #: How the license was stated: ``id`` (an SPDX id), ``expression``,
+    #: ``name`` (prose that is not an id) or ``missing``. The decision differs
+    #: for each, so the distinction has to survive into the report.
+    license_kind: str = "id"
 
     def to_dict(self) -> dict:
         return {
             "name": self.name,
             "version_spec": self.version_spec,
             "ecosystem": self.ecosystem,
+            "purl": self.purl,
             "license_declared": self.license_declared,
+            "license_kind": self.license_kind,
             "source_file": self.source_file,
             "decision": self.decision.value,
             "license": self.verdict.to_dict() if self.verdict else None,

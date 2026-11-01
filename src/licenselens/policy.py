@@ -96,8 +96,35 @@ class Policy:
     source: str = ""
 
     def override_for(self, spdx_id: str) -> "Decision | None":
-        """The signed-off decision for this license, if the policy names one."""
-        return self.overrides.get(spdx_id)
+        """The signed-off decision for this license, if the policy names one.
+
+        Three keys are tried, in order: the id as emitted, then with the
+        ``-only`` / ``-or-later`` suffix stripped. That fallback is not
+        convenience, it is a correctness fix.
+
+        The judge preserves the version suffix - it is legally meaningful, and
+        dropping it would hide whether a project may relicense upward. But the
+        policy file only accepts ids the judge can *emit as a profile*, so
+        ``accept: {AGPL-3.0: review}`` is the only spelling a user can write,
+        while an SBOM routinely states ``AGPL-3.0-or-later``. Without this
+        fallback the signed-off exception silently fails to apply to exactly
+        the documents SBOMs are made of: the user recorded "we accept AGPL",
+        the tool answered "blocked", and the exception existed nowhere except
+        in the config file. A reviewer sees a blocked dependency and a policy
+        that says it should not be, and stops trusting either.
+
+        The fallback stays narrow on purpose: a policy may not name
+        ``GPL-3.0`` and thereby accept ``GPL-2.0``. Only the suffix - which
+        changes which versions you may choose, not whose terms apply - is
+        treated as the same license.
+        """
+        direct = self.overrides.get(spdx_id)
+        if direct is not None:
+            return direct
+        for suffix in ("-or-later", "-only", "-plus"):
+            if spdx_id.lower().endswith(suffix):
+                return self.overrides.get(spdx_id[: -len(suffix)])
+        return None
 
     @classmethod
     def permissive_only(cls) -> "Policy":
@@ -180,6 +207,27 @@ def evaluate(
                     remedy=(
                         "Get written permission from the author, or replace the dependency. "
                         "Do not treat a public repository as free to use."
+                    ),
+                )
+            )
+        elif verdict.spdx_id == "NOASSERTION":
+            # Deliberately not the same verdict as NONE. NOASSERTION is what a
+            # scanner writes when it did not determine a license, so blocking
+            # it asserts something about the package that the document does not
+            # say. Review keeps the item visible without inventing a finding.
+            findings.append(
+                Finding(
+                    kind=RiskKind.HYGIENE,
+                    severity=Decision.REVIEW,
+                    code="LICENSE-NOT-ASSERTED",
+                    message=(
+                        "The document records NOASSERTION: no license was determined "
+                        "for this component. That is a gap in the data, not a finding "
+                        "that the package is unlicensed."
+                    ),
+                    remedy=(
+                        "Resolve the license from the package itself, or pin the "
+                        "component and record a decision in the policy file."
                     ),
                 )
             )

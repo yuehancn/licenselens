@@ -415,7 +415,15 @@ class Prober:
         record.github_spdx = self._license_label(html)
 
         try:
-            filename, text = self._license_text_from_blob(repo, record.branch)
+            # Pass the page we already fetched. Without it the candidate list
+            # falls back to the static filename table, which only knows the
+            # usual spellings - and vercel/next.js ships `license.md`, so the
+            # repo was reported as having no license at all. Re-fetching the
+            # page just to discover the filename would waste a request on every
+            # repository, and "no license" is the worst wrong answer this tool
+            # can give: it blocks a dependency for no reason.
+            filename, text = self._license_text_from_blob(
+                repo, record.branch, html)
             record.license_file = filename
             record.verdict = judge(text)
         except SourceUnavailable:

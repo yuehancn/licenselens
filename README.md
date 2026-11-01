@@ -163,6 +163,42 @@ OK    django                             BSD-3-Clause               allow
 FAIL  demo-service                       AGPL-3.0                   block
 ```
 
+### Read an SBOM somebody else produced
+
+```bash
+licenselens sbom sbom.json                     # CycloneDX or SPDX, auto-detected
+licenselens sbom sbom.json -f markdown -o report.md
+licenselens sbom vendor-bom.json --policy-file licenselens.policy.yml
+```
+
+CycloneDX 1.x and SPDX 2.2 / 2.3 / 3.0 JSON are read; XML is not (convert with
+`cyclonedx-cli` or `spdx-tools`). `--json` keeps the document metadata and every
+component, so the output can be archived as the audit trail.
+
+Three judgement calls make the answers on a real BOM different from what a
+naive reader would produce:
+
+**A missing license in an SBOM is a gap, not a finding.** In a repository audit
+we opened the tree and found no `LICENSE` file — that is a legal fact. In an
+SBOM an empty license field usually means the generator did not populate it.
+The first blocks; the second is a review item, because calling it "all rights
+reserved" produced dozens of false blocks against packages that are plainly MIT.
+The same reasoning separates the two SPDX sentinels: `NONE` blocks (the package
+states it has no license) while `NOASSERTION` reviews (nobody looked).
+
+**`WITH` exceptions change the answer.** `GPL-2.0-only WITH
+Classpath-exception-2.0` is not plain GPL-2.0 — the exception exists precisely
+so that linking the library into your program does not put your program under
+the GPL. Reporting the bare obligation is wrong in the expensive direction.
+The retired single-token spelling (`GPL-2.0-with-classpath-exception`) is read
+the same way, because generators still emit it.
+
+**Parentheses are choices.** `MIT AND (GPL-2.0 OR Apache-2.0)` may be shipped as
+MIT plus Apache-2.0 alone. Folding every id in the string into one flat AND
+reports a block on a component that is free to use. An id the tool cannot name
+is never dropped from the arithmetic in either direction — it makes the answer
+explicitly non-decisive instead.
+
 ### Evaluate an SPDX expression
 
 ```bash
@@ -183,7 +219,9 @@ licenselens facts
 
 `0` when everything is allowed, `1` when something is blocked, `2` on bad input.
 Use `--fail-on review` to fail on anything that needs a human, or
-`--fail-on never` to report without failing.
+`--fail-on never` to report without failing. `licenselens sbom` reserves `2` for
+an unreadable document, so a broken export step is not reported as a licensing
+problem.
 
 ### GitHub Actions
 
@@ -302,9 +340,12 @@ half-parsed. A full worked example is in
   lockfile across every ecosystem.
 - **It does not detect license *violations* in your code**, only the terms of
   dependencies you name.
-- **It does not cover every license in existence.** 18 families are modelled,
+- **It does not cover every license in existence.** 24 families are modelled,
   covering the overwhelming majority of real dependency trees. Anything else comes
   back as `UNRECOGNIZED` with `decisive=False`, on purpose.
+- **It does not read XML SBOMs.** Convert to JSON first. The XML parsers in the
+  ecosystem already do this well, and a half-working one here would fail quietly
+  on namespaces.
 
 ## Test suite
 
@@ -313,7 +354,7 @@ python licenselens.py selftest
 ```
 
 ```
-82/82 passed
+96/96 passed
 ```
 
 The fixtures are canonical license texts fetched from the GitHub Licenses API and

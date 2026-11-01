@@ -23,8 +23,9 @@ from .judge import (
 )
 from .policy import Decision, Finding, Policy, RiskKind, evaluate
 from .probe import Prober, RepoRecord
+from .sbom import SbomDocument, SbomError, load_sbom, parse_sbom
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 __all__ = [
     "COMMERCIAL_CONDITIONAL",
@@ -43,10 +44,14 @@ __all__ = [
     "Prober",
     "RepoRecord",
     "RiskKind",
+    "SbomDocument",
+    "SbomError",
     "Verdict",
     "__version__",
     "evaluate",
     "explain",
     "judge",
     "judge_expression",
+    "load_sbom",
+    "parse_sbom",
 ]
