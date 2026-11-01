@@ -103,6 +103,18 @@ named users who run the tool or read its reports.
 under ¥1,000,000 annual revenue, for the first two years. No application form —
 say so in your email and it applies.
 
+**One-off compliance report: ¥8,000 per report.** A signed, dated written report
+on a single dependency tree — the licences it resolves to, every copyleft
+obligation that binds you, and a per-component remediation plan. It is not a
+subscription and it needs no annual commitment: it exists for due diligence, a
+procurement gate, or a board question with a deadline. Run
+`licenselens audit` yourself first; the report is worth buying when you need the
+findings attested by someone who will stand behind them.
+
+This price is quoted identically in `MONETIZATION.md`; if the two files ever
+disagree, the number here is the one a customer was told, so treat a mismatch as
+a bug in `MONETIZATION.md`, not a discount.
+
 **Open-source projects and academic research:** free commercial license. If your
 project is itself AGPL-compatible or your use is non-commercial research, you
 already have everything you need; ask only if you want the warranty.

@@ -71,6 +71,19 @@ existing `import licenselens` and the console script name in people's CI configs
 
 - Python 3.10+. No third-party runtime dependencies, ever. The tool must run on a
   locked-down CI runner with nothing but CPython.
+  - Status of the floor: **3.10 reached end-of-life on 2026-10-01** (upstream
+    security support ended; see endoflife.date). The project still declares and
+    still tests 3.10, so it is not a false claim - but it is now a floor that
+    receives no upstream fixes, and every new interpreter feature has to be
+    avoided to keep it. Raising the floor to 3.11 is planned, not done: it
+    deletes the `tomllib` fallback in `manifest.py` and its dedicated test,
+    which is a behaviour change that needs a release and a changelog entry, not
+    a silent version bump. Do not raise the floor in a drive-by commit.
+  - `tests/test_all.py::test_supported_python_floor_is_consistent_across_files`
+    checks the three declarations agree with each other and with CI. It does
+    **not** check for EOL on purpose: the EOL date changes without the
+    repository changing, and a test that fails because the calendar advanced
+    would be turned off within a week.
 - Type annotations on public functions.
 - Comments explain *why*, especially where a line looks odd because it works
   around a real GitHub response. "GitHub removed the textarea in 2025" is a

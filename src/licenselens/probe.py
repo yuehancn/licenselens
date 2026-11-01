@@ -93,37 +93,6 @@ def _decode_json_string_literal(raw: str) -> str:
     return text
 
 
-def _looks_like_html(text: str) -> bool:
-    head = text[:400].lower()
-    return "<!doctype html" in head or "<html" in head
-
-
-def _extract_raw_lines(html: str) -> str:
-    """Recover a license body from a GitHub blob page, across markup eras.
-
-    Three shapes exist in the wild, and all three are live today depending on
-    file size and which A/B bucket the request lands in:
-
-    1. ``<textarea>`` (the old editor embedding)
-    2. ``"rawLines":["..."]`` (the React payload, small and medium files)
-    3. ``"rawLines":null`` (large files, content fetched lazily)
-
-    Case 3 is why a fallback chain is mandatory: Redis's LICENSE.txt is 72 KB
-    and hits it. A parser that only handles case 2 reports no license for a
-    correctly licensed project, which then blocks it for no reason.
-    """
-    match = RE_TEXTAREA.search(html)
-    if match:
-        text = unescape_markup(match.group(1)).strip()
-        if len(text) > 30:
-            return text
-
-    text = _extract_raw_lines(html)
-    if len(text) > 30:
-        return text
-    return ""
-
-
 def _extract_raw_lines(html: str) -> str:
     """Pull the file body out of GitHub's React payload."""
     match = RE_RAW_LINES.search(html)
@@ -152,6 +121,13 @@ _FILENAME_LABELS = {
 
 
 def _looks_like_html(text: str) -> bool:
+    """True when a fetched body is an HTML page rather than a license file.
+
+    Channel 2 in ``_license_text_from_blob`` trusts a 200 response, and GitHub
+    serves a login or error page with 200 often enough that the length check
+    alone would happily treat it as license text. A page that merely contains
+    the word "License" would then be judged as the license.
+    """
     head = text[:400].lower()
     return "<!doctype html" in head or "<html" in head
 

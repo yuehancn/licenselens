@@ -656,29 +656,53 @@ def test_packaging_names_stay_split() -> None:
 
 @case
 def test_supported_python_floor_is_consistent_across_files() -> None:
-    """The advertised floor must equal the CI floor, and neither may be EOL.
+    """Every document that states the floor must state the same one.
 
-    Three places state the supported interpreter: ``requires-python`` in
-    pyproject, the README install section, and the lowest entry in the CI
-    matrix. They drifted before (3.9 stayed advertised a year after it went EOL
-    on 2025-10-31), and a floor nobody tests is a floor that is already broken.
+    Four places state the supported interpreter: ``requires-python`` in
+    pyproject, the classifier list, the README install section, CONTRIBUTING's
+    code-style section, and the lowest entry in the CI matrix. They drifted
+    before (3.9 stayed advertised a year after it went EOL on 2025-10-31), and a
+    floor nobody tests is a floor that is already broken.
+
+    EOL is deliberately *not* asserted here. Letting this test fail because a
+    calendar date passed would make it fail on an unchanged repository, and a
+    test that goes red for that reason gets deleted rather than fixed. The EOL
+    fact is recorded in CONTRIBUTING.md instead, where a human reads it.
     """
     import re
 
     root = HERE.parent
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
     readme = (root / "README.md").read_text(encoding="utf-8")
+    contributing = (root / "CONTRIBUTING.md").read_text(encoding="utf-8")
     workflow = (root / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 
     requires = re.search(r'requires-python\s*=\s*">=\s*(3\.\d+)"', pyproject)
     assert requires, "requires-python missing or not in >=X.Y form"
     floor = requires.group(1)
 
+    # The classifier list is what PyPI renders as "Python :: 3.10", so a stale
+    # entry there advertises a floor the package no longer honours.
+    classifiers = re.findall(r'"Programming Language :: Python :: (3\.\d+)"', pyproject)
+    assert floor in classifiers, (
+        f"requires-python says {floor} but the classifiers never mention it: "
+        f"{classifiers}"
+    )
+    stale = [c for c in classifiers if c < floor]
+    assert not stale, f"classifiers still advertise a floor below {floor}: {stale}"
+
     # README states it as "Python 3.10+."
     readme_floor = re.search(r"Python\s+(3\.\d+)\+", readme)
     assert readme_floor, "README no longer states a Python floor"
     assert readme_floor.group(1) == floor, (
         f"README says {readme_floor.group(1)}+ but pyproject says {floor}+"
+    )
+
+    # CONTRIBUTING is where a contributor looks before picking a feature to use.
+    contrib_floor = re.search(r"-\s*Python\s+(3\.\d+)\+", contributing)
+    assert contrib_floor, "CONTRIBUTING no longer states a Python floor"
+    assert contrib_floor.group(1) == floor, (
+        f"CONTRIBUTING says {contrib_floor.group(1)}+ but pyproject says {floor}+"
     )
 
     # CI must actually test the floor; otherwise it is an untested claim.
@@ -1409,6 +1433,137 @@ def test_probe_html_channel_passes_the_page_to_candidate_extraction() -> None:
     # API quota disappears.
     blob_requests = [u for u in requested if "/blob/" in u]
     assert blob_requests and "license.md" in blob_requests[0], blob_requests[:3]
+
+
+@case
+def test_probe_module_defines_each_helper_once() -> None:
+    """A duplicate definition is a silent overwrite, not a harmless copy.
+
+    ``probe.py`` carried two ``_extract_raw_lines`` and two ``_looks_like_html``
+    definitions after the SBOM commit. The second definition wins, so the first
+    one is dead code that still imports and still type-checks - nothing goes red.
+    The dead ``_extract_raw_lines`` was worse than inert: its body had been
+    pasted from ``_extract_license_body`` and called ``_extract_raw_lines``
+    itself, so the code sitting in the file was an infinite recursion. It never
+    ran only because the good definition below it replaced it.
+
+    Any future paste-over-a-name shows up here, which is the point: this class
+    of defect is invisible to every other check this project runs.
+    """
+    import ast
+
+    source = (HERE.parent / "src" / "licenselens" / "probe.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(source)
+
+    defined = [
+        node.name
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    duplicates = sorted({name for name in defined if defined.count(name) > 1})
+    assert not duplicates, (
+        f"duplicate module-level definitions in probe.py: {duplicates}. "
+        "The later definition silently wins."
+    )
+
+    # The list above must actually contain the helpers this guards, otherwise a
+    # rename would make the assertion vacuous and this test would pass forever.
+    for expected in ("_extract_raw_lines", "_extract_license_body",
+                     "_looks_like_html", "_decode_json_string_literal"):
+        assert expected in defined, f"{expected} vanished from probe.py"
+
+
+@case
+def test_probe_helpers_are_distinct_and_wired_correctly() -> None:
+    """The four blob helpers must not share a body.
+
+    ``_extract_license_body`` is the only entry point that decides across the
+    three markup eras; ``_extract_raw_lines`` must parse the React payload and
+    nothing else. If a paste ever makes them the same function again, the
+    textarea era silently stops being tried and Redis-shaped repositories start
+    reporting "no license".
+    """
+    import inspect
+
+    from licenselens import probe
+
+    body_of = {
+        name: inspect.getsource(getattr(probe, name))
+        for name in ("_extract_raw_lines", "_extract_license_body")
+    }
+    assert body_of["_extract_raw_lines"] != body_of["_extract_license_body"], (
+        "the two helpers have identical bodies - one of them was pasted over"
+    )
+    # Only the entry point may consult the <textarea> branch.
+    assert "RE_TEXTAREA" in body_of["_extract_license_body"], (
+        "_extract_license_body no longer tries the <textarea> era first"
+    )
+    assert "RE_RAW_LINES" in body_of["_extract_raw_lines"], (
+        "_extract_raw_lines no longer parses the React payload"
+    )
+    # And the entry point must reach the raw-lines parser, not skip it.
+    assert "_extract_raw_lines(" in body_of["_extract_license_body"], (
+        "_extract_license_body never calls _extract_raw_lines"
+    )
+
+
+@case
+def test_prices_agree_across_commercial_docs() -> None:
+    """Every quoted price must appear in both COMMERCIAL.md and MONETIZATION.md.
+
+    These two files are read by different people - COMMERCIAL.md by a buyer,
+    MONETIZATION.md by whoever is planning revenue - so drift is silent: one is
+    updated, the other keeps quoting last quarter's number, and nobody notices
+    until a customer is told two different prices for the same thing.
+
+    It already happened: COMMERCIAL.md listed the three subscription tiers but
+    omitted the ¥8,000 one-off report entirely, so the report was sellable
+    according to MONETIZATION.md and unpriced according to the page a buyer
+    actually reads.
+    """
+    import re
+
+    root = HERE.parent
+    commercial = (root / "COMMERCIAL.md").read_text(encoding="utf-8")
+    monetization = (root / "MONETIZATION.md").read_text(encoding="utf-8")
+
+    # The price list is the contract; treat it as data rather than prose.
+    #
+    # Match on the currency-marked form, not the bare digits. The first version
+    # of this test checked for "8,000" and passed while the ¥8,000 report was
+    # missing entirely, because "48,000" contains "8,000" - a substring check on
+    # numbers is a test that cannot fail. The ¥ prefix is what makes the
+    # Enterprise price and the report price distinguishable.
+    prices = ["¥3,800", "¥12,800", "¥48,000", "¥8,000"]
+
+    missing_in_commercial = [p for p in prices if p not in commercial]
+    assert not missing_in_commercial, (
+        "COMMERCIAL.md is missing these quoted prices: "
+        f"{missing_in_commercial}. A price a buyer cannot find is a price that "
+        "gets negotiated from zero."
+    )
+
+    missing_in_monetization = [p for p in prices if p not in monetization]
+    assert not missing_in_monetization, (
+        f"MONETIZATION.md lost these prices: {missing_in_monetization}"
+    )
+
+    # The tiers themselves must keep their names on both sides, so a price row
+    # cannot be repurposed for a different tier without this failing.
+    for tier in ("Team", "Business", "Enterprise"):
+        assert tier in commercial and tier in monetization, (
+            f"tier {tier} disappeared from one of the commercial documents"
+        )
+
+    # Guard against the currency drifting to a bare "$" in either file: both
+    # documents quote CNY, and a reader in another market would misread it.
+    for name, text in (("COMMERCIAL.md", commercial),
+                       ("MONETIZATION.md", monetization)):
+        assert not re.search(r"\$\s?\d", text), (
+            f"{name} quotes a price in dollars; the price list is in CNY"
+        )
 
 
 if __name__ == "__main__":
